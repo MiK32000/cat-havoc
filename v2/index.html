@@ -1,0 +1,1840 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Cat Havoc</title>
+<style>
+  :root { --panel: rgba(27, 20, 38, .82); --accent: #ffb347; }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%; overflow: hidden; background: #1b1426; color: #fff;
+    font-family: "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
+    -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent;
+  }
+  #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: default; }
+  /* while the mouse is steering the cat the cursor is a red dot */
+  body.playing.mouseCtl #game { cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Ccircle cx='12' cy='12' r='6' fill='%23e61919' stroke='white' stroke-width='2'/%3E%3C/svg%3E") 12 12, crosshair; }
+
+  #hud { position: fixed; top: 0; left: 0; right: 0; display: flex; justify-content: space-between; padding: 10px 16px; pointer-events: none; }
+  .stat { background: var(--panel); border-radius: 14px; padding: 6px 18px; min-width: 120px; }
+  .stat small { display: block; font-size: 11px; font-weight: 700; letter-spacing: .16em; opacity: .7; }
+  .stat b { display: inline-block; font-size: 30px; line-height: 1.1; font-variant-numeric: tabular-nums; transform-origin: left center; }
+  .stat.right { text-align: right; }
+  .stat.right b { transform-origin: right center; }
+  #timeStat.low b { color: #ff6b6b; }
+  #scoreStat.bump b { animation: bump .25s ease-out; }
+  @keyframes bump { 50% { transform: scale(1.3); color: var(--accent); } }
+
+  #overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; padding: 16px; pointer-events: none; }
+  #overlay.hidden { display: none; }
+  .card { background: var(--panel); border-radius: 22px; padding: 24px 32px; text-align: center; max-width: min(600px, 92vw); box-shadow: 0 10px 40px rgba(0,0,0,.45); }
+  .card h1 { margin: 0 0 8px; font-size: clamp(28px, 6vw, 44px); letter-spacing: .02em; color: var(--accent); }
+  .card p { margin: 6px 0; line-height: 1.4; font-size: clamp(14px, 2.6vw, 18px); }
+  .card p.small { font-size: clamp(12px, 2.2vw, 14px); opacity: .8; }
+  .card p.go { margin-top: 12px; font-weight: 700; font-size: clamp(13px, 2.6vw, 16px); animation: pulse 1.1s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .5; } }
+  .opt {
+    pointer-events: auto; cursor: pointer; font: inherit; font-weight: 700; font-size: clamp(13px, 2.6vw, 17px); color: #fff;
+    background: rgba(255,255,255,.1); border: 2px solid rgba(255,255,255,.25); border-radius: 14px; padding: 9px 18px;
+  }
+  .opt small { opacity: .6; margin-left: 6px; font-weight: 600; }
+  .opt:hover { background: rgba(255,255,255,.22); }
+  .opt.active { border-color: var(--accent); background: rgba(255,179,71,.24); }
+  .row2 { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-top: 14px; }
+  body.inMenu #hud, body.inMenu #help { display: none; }
+  #hud.hidden { display: none; }
+  #menuBtn { pointer-events: auto; align-self: flex-start; cursor: pointer; font: inherit; font-size: 12px; font-weight: 700; letter-spacing: .1em; color: #fff; background: var(--panel); border: 0; border-radius: 12px; padding: 8px 14px; opacity: .85; }
+  #menuBtn:hover { opacity: 1; }
+
+  /* main menu: the living-room chase plays behind it */
+  #menu { position: fixed; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: space-between; padding: 22px 14px 14px; pointer-events: none; }
+  body.inMenu #menu { display: flex; }
+  .menuTitle { margin: 0; text-align: center; color: var(--accent); font-size: clamp(38px, 9vw, 76px); letter-spacing: .03em; text-shadow: 0 4px 0 rgba(0,0,0,.45), 0 0 30px rgba(0,0,0,.5); }
+  .menuTitle small { display: block; margin-top: 4px; color: #fff; font-size: clamp(12px, 2.4vw, 17px); letter-spacing: .08em; font-weight: 700; text-shadow: 0 1px 0 #000, 0 0 6px #000, 0 0 14px rgba(0,0,0,.9); }
+  .panel { pointer-events: auto; width: min(940px, 98vw); background: var(--panel); border-radius: 22px; padding: 12px 18px 10px; text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,.5); display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 2px 26px; }
+  .panel .field { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; margin: 4px 0; text-align: left; }
+  .panel .field label { font-size: 11px; font-weight: 700; letter-spacing: .16em; opacity: .65; }
+  .sel {
+    pointer-events: auto; cursor: pointer; font: inherit; font-weight: 700; font-size: clamp(14px, 2.6vw, 17px); color: #fff; min-width: 160px;
+    background-color: rgba(255,255,255,.1); border: 2px solid rgba(255,255,255,.25); border-radius: 12px; padding: 8px 36px 8px 14px;
+    appearance: none; -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='white' stroke-width='2'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 13px center;
+  }
+  .sel:hover, .sel:focus { border-color: var(--accent); outline: none; background-color: rgba(255,179,71,.16); }
+  .sel option { background: #1b1426; color: #fff; }
+  .toggle {                                  /* an on/off switch */
+    pointer-events: auto; cursor: pointer; font: inherit; font-weight: 700; font-size: clamp(14px, 2.6vw, 17px); color: #fff; min-width: 116px;
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    background: rgba(255,255,255,.1); border: 2px solid rgba(255,255,255,.25); border-radius: 999px; padding: 6px 16px 6px 8px;
+  }
+  .toggle .knob { width: 24px; height: 24px; border-radius: 50%; background: #8b8697; }
+  .toggle:hover { background: rgba(255,255,255,.2); }
+  .toggle[aria-checked="true"] { border-color: var(--accent); background: rgba(255,179,71,.24); flex-direction: row-reverse; padding: 6px 8px 6px 16px; }
+  .toggle[aria-checked="true"] .knob { background: var(--accent); }
+  #modeDesc { flex: 1 1 380px; margin: 6px 0; min-height: 2.6em; font-size: clamp(12px, 2.3vw, 15px); line-height: 1.35; opacity: .9; }
+  #playBtn { pointer-events: auto; cursor: pointer; font: inherit; font-weight: 800; font-size: clamp(16px, 3vw, 22px); letter-spacing: .06em; color: #2a1a05; background: var(--accent); border: 0; border-radius: 16px; padding: 10px 56px; box-shadow: 0 4px 0 #b96a0f; }
+  #playBtn:hover { filter: brightness(1.08); }
+  #playBtn:active { transform: translateY(2px); box-shadow: 0 2px 0 #b96a0f; }
+  .panel .keys { flex-basis: 100%; margin: 6px 0 0; font-size: 11px; opacity: .6; }
+
+  #help { position: fixed; left: 0; right: 0; bottom: 6px; text-align: center; font-size: 12px; opacity: .65; pointer-events: none; text-shadow: 0 1px 2px #000; }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="hud" class="hidden">
+  <div class="stat" id="scoreStat"><small>SCORE</small><b id="score">0</b></div>
+  <button id="menuBtn" tabindex="-1">MENU</button>
+  <div class="stat right" id="timeStat"><small id="timeLabel">TIME LEFT</small><b id="time">60</b></div>
+</div>
+
+<div id="menu">
+  <h1 class="menuTitle">Cat Havoc<small>a speedy cat, a grumpy owner and a lot of breakable things</small></h1>
+  <div class="panel">
+    <div class="field"><label for="selMap">MAP</label>
+      <select id="selMap" class="sel"><option value="house">House (1)</option><option value="park">Park (2)</option></select></div>
+    <div class="field"><label for="selMode">MODE</label>
+      <select id="selMode" class="sel"><option value="classic">Classic (3)</option><option value="break">Break everything (4)</option><option value="endless">Endless (5)</option></select></div>
+    <div class="field"><label for="camBtn">CAT CAM (C)</label>
+      <button id="camBtn" class="toggle" role="switch" aria-checked="false" tabindex="-1"><span class="knob"></span><span id="camBtnText">Off</span></button></div>
+    <p id="modeDesc"></p>
+    <button id="playBtn" tabindex="-1">PLAY</button>
+    <p class="keys">Enter or Space to play &nbsp;·&nbsp; keys 1-5 pick map and mode, C toggles cat cam &nbsp;·&nbsp; in the game: WASD / arrows + Space to sprint, or the mouse (the cat follows the cursor, hold left click to sprint)</p>
+  </div>
+</div>
+
+<div id="overlay" class="hidden">
+  <div class="card">
+    <h1 id="ovTitle"></h1>
+    <p id="ovText"></p>
+    <div class="row2">
+      <button class="opt" id="againBtn" tabindex="-1">Play again</button>
+      <button class="opt" id="toMenuBtn" tabindex="-1">Main menu <small>M</small></button>
+    </div>
+    <p class="go" id="ovGo">Press an arrow key, click or tap to play again</p>
+  </div>
+</div>
+
+<div id="help">WASD / arrow keys run, hold Space to sprint &nbsp;·&nbsp; or just use the mouse: the cat follows the cursor, hold left click to sprint</div>
+
+<!-- three.js r128, loaded from a CDN (needs an internet connection) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+'use strict';
+/* =====================================================================
+   CAT HAVOC — a one-file three.js game.
+   You are a speedy cat. Run into things to break them (score!), don't get
+   caught by the owner for one minute. Hold Space to zoom, but slipping on
+   broken bits stuns you. The owner can trip on them too (1 in 5).
+
+   Two maps: a 9-room HOUSE (the camera follows you room to room through the
+   corridors) and a PARK (areas split by canals, joined by bridges).
+   ===================================================================== */
+
+const $ = id => document.getElementById(id);
+
+if (typeof THREE === 'undefined') {
+  $('ovTitle').textContent = 'Could not load three.js';
+  $('ovText').textContent = 'This game loads three.js from the internet. Check your connection and reload the page.';
+  throw new Error('three.js failed to load');
+}
+
+const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+const rand = (a, b) => a + Math.random() * (b - a);
+const pick = arr => arr[(Math.random() * arr.length) | 0];
+
+/* ---------------------------------------------------------------------
+   Distance fade (used by Cat cam). Every material gets a small shader patch: solid things darken and see-through things fade out
+   the further they are from the cat, measured in WORLD units on the floor plan, in a soft-edged rectangle. The whole map is always
+   loaded and drawn, so things fade smoothly into view as the cat gets closer, instead of popping in. Zooming the web page or resizing
+   the window can't show more: beyond the rectangle everything is fully dark.
+   --------------------------------------------------------------------- */
+const FADE = { rect: { value: new THREE.Vector4(0, 0, 1e5, 1e5) }, soft: { value: 1 } };   // rect = centre x, centre z, half width, half depth (where it is fully dark)
+function fadeAt(x, z) {                  // the same maths as the shader below, for things that can't use it (sprites)
+  const r = FADE.rect.value, s = FADE.soft.value;
+  const f = Math.min((r.z - Math.abs(x - r.x)) / s, (r.w - Math.abs(z - r.y)) / s), c = f < 0 ? 0 : f > 1 ? 1 : f;
+  return c * c * (3 - 2 * c);
+}
+THREE.Material.prototype.onBeforeCompile = function (shader) {
+  if (!shader.vertexShader.includes('#include <project_vertex>') || !shader.fragmentShader.includes('#include <dithering_fragment>')) return;
+  shader.uniforms.uFade = FADE.rect; shader.uniforms.uFadeSoft = FADE.soft;
+  shader.uniforms.uFadeOpaque = { value: this.transparent ? 0 : 1 };
+  shader.vertexShader = 'varying vec3 vFadeWorld;\n' + shader.vertexShader.replace('#include <project_vertex>', '#include <project_vertex>\n  vFadeWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+  shader.fragmentShader = 'varying vec3 vFadeWorld;\nuniform vec4 uFade;\nuniform float uFadeSoft;\nuniform float uFadeOpaque;\n' + shader.fragmentShader.replace('#include <dithering_fragment>',
+    `#include <dithering_fragment>
+  vec2 fadeD = abs(vFadeWorld.xz - uFade.xy);
+  float fadeF = smoothstep(0.0, 1.0, min((uFade.z - fadeD.x) / uFadeSoft, (uFade.w - fadeD.y) / uFadeSoft));
+  gl_FragColor.rgb *= mix(1.0, fadeF, uFadeOpaque);
+  gl_FragColor.a *= mix(fadeF, 1.0, uFadeOpaque);`);
+};
+function mulberry32(seed) {            // small seeded random generator, so each map is laid out the same every time
+  let a = seed >>> 0;
+  return function () {
+    a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/* ---------------------------------------------------------------------
+   Tuning numbers (world units)
+   --------------------------------------------------------------------- */
+const CAT_R = 0.6, OWNER_R = 0.9;      // reach: how close counts as breaking an item / being caught
+const CAT_BODY = 0.5;                  // the cat's body against walls and furniture (slimmer, so it slips round things easily)
+const CAT_SPEED = 8;                   // normal running speed
+const CAT_BOOST = 13;                  // speed while zooming (hold Space)
+const OWNER_SPEED = 7.4;               // just under a normal cat's speed
+const CATCH_DIST = 1.3;                // owner this close = caught
+const ROUND_TIME = 60;                 // seconds
+const STUN_TIME = 1.0;                 // cat stunned for this long after slipping
+const OWNER_STUN_TIME = 2.0;           // owner stunned for this long after tripping
+const OWNER_TRIP_CHANCE = 1 / 5;       // chance the owner trips each time he steps on broken bits
+const SLIP_R = 0.8;                    // how close to broken bits the cat must be to slip
+const OWNER_SLIP_R = 0.9;              // same for the owner
+const ARM_DIST = 1.7;                  // new broken bits only become slippery once the cat has moved this far away
+const POINTS = 10;                     // score per broken thing
+const OWNER_HEAD_START = 2.0;          // owner waits this long at the start of a round
+const ITEM_SCALE = 1.35;               // things are drawn a bit bigger so they're easy to spot
+const WALL_T = 0.5, DOOR_W = 4;        // wall thickness, door/bridge width
+const CELL = 0.5;                      // path-finding grid cell size
+const DEBRIS_LIFE = 10;                // broken bits are cleaned up this many seconds after breaking
+const FEAR_DIST = 9;                   // the cat bristles when the owner is closer than this
+
+/* ---------------------------------------------------------------------
+   Rectangles: walls, furniture, trees, water... Cat and owner are circles
+   that slide along them.
+   --------------------------------------------------------------------- */
+let solids = [];                       // the current map's solid rectangles {x0,x1,z0,z1}
+
+function clearOfSolids(list, x, z, r) {
+  for (const s of list) {
+    const dx = Math.max(s.x0 - x, 0, x - s.x1), dz = Math.max(s.z0 - z, 0, z - s.z1);
+    if (dx * dx + dz * dz < r * r) return false;
+  }
+  return true;
+}
+function rectClear(list, rc, gap) {    // is rectangle rc at least `gap` away from every solid?
+  for (const s of list) if (rc.x0 - gap < s.x1 && rc.x1 + gap > s.x0 && rc.z0 - gap < s.z1 && rc.z1 + gap > s.z0) return false;
+  return true;
+}
+function laneOK(list, rc, lo, hi) {     // no overlaps, and no lane between rc and anything else that is wide enough for the cat but too narrow for the owner
+  for (const s of list) {
+    const dx = Math.max(s.x0 - rc.x1, rc.x0 - s.x1, 0), dz = Math.max(s.z0 - rc.z1, rc.z0 - s.z1, 0), d = Math.hypot(dx, dz);
+    if (d < 0.3 || (d >= lo && d < hi)) return false;
+  }
+  return true;
+}
+const rectsOverlap = (a, b) => a.x0 < b.x1 && a.x1 > b.x0 && a.z0 < b.z1 && a.z1 > b.z0;
+
+function pushOut(o, r, s) {            // push a circle out of a rectangle; also drop the velocity heading into it
+  const cx = clamp(o.x, s.x0, s.x1), cz = clamp(o.z, s.z0, s.z1);
+  const dx = o.x - cx, dz = o.z - cz, d2 = dx * dx + dz * dz;
+  if (d2 >= r * r) return;
+  let nx = 0, nz = 0;
+  if (d2 > 1e-9) { const d = Math.sqrt(d2); nx = dx / d; nz = dz / d; o.x = cx + nx * r; o.z = cz + nz * r; }
+  else {                               // centre is inside the rectangle: leave by the nearest side
+    const l = o.x - s.x0, rt = s.x1 - o.x, t = o.z - s.z0, b = s.z1 - o.z, m = Math.min(l, rt, t, b);
+    if (m === l) { nx = -1; o.x = s.x0 - r; } else if (m === rt) { nx = 1; o.x = s.x1 + r; }
+    else if (m === t) { nz = -1; o.z = s.z0 - r; } else { nz = 1; o.z = s.z1 + r; }
+  }
+  const vn = o.vx * nx + o.vz * nz;
+  if (vn < 0) { o.vx -= vn * nx; o.vz -= vn * nz; }
+}
+function collide(o, r) {
+  for (let pass = 0; pass < 3; pass++) for (const s of solids) pushOut(o, r, s);
+}
+
+/* ---------------------------------------------------------------------
+   three.js basics
+   --------------------------------------------------------------------- */
+const canvas = $('game');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1b1426);
+const camera = new THREE.PerspectiveCamera(35, 1, 0.5, 400);
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.72));
+scene.add(new THREE.HemisphereLight(0xfff4e0, 0x6a5a7a, 0.25));
+const sun = new THREE.DirectionalLight(0xfff0d8, 0.8);
+const sunOffset = new THREE.Vector3(-14, 30, 16);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -34, right: 34, top: 34, bottom: -34, near: 1, far: 100 });
+sun.shadow.bias = -0.0006;
+scene.add(sun, sun.target);
+
+/* Materials / mesh helpers */
+const matCache = new Map();
+function mat(color, opts) {
+  const key = color + (opts ? JSON.stringify(opts) : '');
+  let m = matCache.get(key);
+  if (!m) { m = new THREE.MeshLambertMaterial(Object.assign({ color }, opts || {})); matCache.set(key, m); }
+  return m;
+}
+function box(w, h, d, color, x, y, z, parent) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(color));
+  m.position.set(x, y, z); m.castShadow = true; m.receiveShadow = true;
+  if (parent) parent.add(m);
+  return m;
+}
+function cyl(rt, rb, h, color, x, y, z, parent, seg) {
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, seg || 14), mat(color));
+  m.position.set(x, y, z); m.castShadow = true;
+  if (parent) parent.add(m);
+  return m;
+}
+function ball(r, color, x, y, z, parent) {
+  const m = new THREE.Mesh(new THREE.SphereGeometry(r, 16, 12), mat(color));
+  m.position.set(x, y, z); m.castShadow = true;
+  if (parent) parent.add(m);
+  return m;
+}
+
+/* ---------------------------------------------------------------------
+   Floor textures (drawn on little canvases, so there are no image files)
+   --------------------------------------------------------------------- */
+function canvasTexture(size, draw) {
+  const c = document.createElement('canvas'); c.width = c.height = size;
+  draw(c.getContext('2d'), size);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  return t;
+}
+const noise = (g, s, n, light, dark, a) => { for (let i = 0; i < n; i++) { g.fillStyle = Math.random() < 0.5 ? `rgba(${light},${a})` : `rgba(${dark},${a})`; g.fillRect(Math.random() * s, Math.random() * s, 2, 2); } };
+const carpet = base => (g, s) => { g.fillStyle = base; g.fillRect(0, 0, s, s); noise(g, s, 700, '255,255,255', '20,20,40', 0.07); };
+const FLOOR_DEFS = {
+  wood: { tile: 8, size: 256, draw(g, s) {
+    for (let i = 0; i < 8; i++) {
+      const h = s / 8;
+      g.fillStyle = `hsl(28, 48%, ${52 + Math.random() * 8}%)`; g.fillRect(0, i * h, s, h);
+      g.fillStyle = 'rgba(80,40,10,.55)'; g.fillRect(0, i * h, s, 2); g.fillRect(Math.random() * s, i * h, 2, h);
+      for (let k = 0; k < 6; k++) { g.fillStyle = 'rgba(90,50,20,.12)'; g.fillRect(Math.random() * s, i * h + Math.random() * h, 30 + Math.random() * 60, 1.5); }
+    } } },
+  tile: { tile: 3, size: 128, draw(g, s) {
+    g.fillStyle = '#f3ead8'; g.fillRect(0, 0, s, s);
+    g.fillStyle = '#6fb7a8'; g.fillRect(0, 0, s / 2, s / 2); g.fillRect(s / 2, s / 2, s / 2, s / 2);
+    g.strokeStyle = 'rgba(0,0,0,.12)'; g.lineWidth = 2;
+    for (const [x, y] of [[0, 0], [s / 2, 0], [0, s / 2], [s / 2, s / 2]]) g.strokeRect(x, y, s / 2, s / 2);
+  } },
+  carpetP: { tile: 6, size: 128, draw: carpet('#8a79c4') },
+  carpetG: { tile: 6, size: 128, draw: carpet('#5f8f6e') },
+  bath: { tile: 2.5, size: 128, draw(g, s) {
+    g.fillStyle = '#86bfd4'; g.fillRect(0, 0, s, s); g.strokeStyle = 'rgba(20,80,110,.55)'; g.lineWidth = 2;
+    for (let i = 0; i <= 4; i++) { g.beginPath(); g.moveTo(i * s / 4, 0); g.lineTo(i * s / 4, s); g.stroke(); g.beginPath(); g.moveTo(0, i * s / 4); g.lineTo(s, i * s / 4); g.stroke(); }
+  } },
+  concrete: { tile: 7, size: 128, draw(g, s) { g.fillStyle = '#9a9aa2'; g.fillRect(0, 0, s, s); noise(g, s, 1200, '255,255,255', '0,0,0', 0.06); g.strokeStyle = 'rgba(0,0,0,.25)'; g.lineWidth = 2; g.strokeRect(1, 1, s - 2, s - 2); } },
+  playmat: { tile: 6, size: 128, draw(g, s) {
+    const cols = ['#e8604c', '#f5c542', '#4aa3df', '#5cbf74'];
+    for (let i = 0; i < 4; i++) { g.fillStyle = cols[i]; g.fillRect((i % 2) * s / 2, ((i / 2) | 0) * s / 2, s / 2, s / 2); }
+    g.strokeStyle = 'rgba(0,0,0,.18)'; g.lineWidth = 2; g.strokeRect(0, 0, s, s); g.strokeRect(s / 2, 0, 1, s); g.strokeRect(0, s / 2, s, 1);
+  } },
+  marble: { tile: 4, size: 128, draw(g, s) {
+    g.fillStyle = '#c9bda6'; g.fillRect(0, 0, s, s); g.fillStyle = '#8f8372'; g.fillRect(0, 0, s / 2, s / 2); g.fillRect(s / 2, s / 2, s / 2, s / 2);
+    g.strokeStyle = 'rgba(60,50,40,.22)'; g.lineWidth = 1; for (let i = 0; i < 8; i++) { g.beginPath(); g.moveTo(Math.random() * s, 0); g.lineTo(Math.random() * s, s); g.stroke(); }
+  } },
+  grass: { tile: 8, size: 256, draw(g, s) {
+    g.fillStyle = '#5aab4b'; g.fillRect(0, 0, s, s); g.fillStyle = 'rgba(255,255,255,.05)'; g.fillRect(0, 0, s, s / 2);
+    for (let i = 0; i < 900; i++) { g.fillStyle = Math.random() < 0.5 ? 'rgba(190,255,150,.16)' : 'rgba(20,80,20,.14)'; g.fillRect(Math.random() * s, Math.random() * s, 2, 5); }
+  } },
+  stone: { tile: 4, size: 128, draw(g, s) {
+    g.fillStyle = '#b9b2a4'; g.fillRect(0, 0, s, s); g.strokeStyle = 'rgba(70,60,50,.5)'; g.lineWidth = 2;
+    for (let r = 0; r < 4; r++) { g.strokeRect(0, r * s / 4, s, s / 4); for (let c = 0; c < 2; c++) g.strokeRect(((r % 2) * s / 4) + c * s / 2, r * s / 4, s / 2, s / 4); }
+  } },
+  brick: { tile: 4, size: 128, draw(g, s) {
+    g.fillStyle = '#7c3f33'; g.fillRect(0, 0, s, s); g.strokeStyle = 'rgba(230,200,180,.55)'; g.lineWidth = 3;
+    for (let r = 0; r < 8; r++) for (let c = -1; c < 4; c++) g.strokeRect(c * s / 4 + (r % 2) * s / 8, r * s / 8, s / 4, s / 8);
+  } },
+  water: { tile: 10, size: 128, draw(g, s) {
+    g.fillStyle = '#3f9bd8'; g.fillRect(0, 0, s, s); g.strokeStyle = 'rgba(255,255,255,.28)'; g.lineWidth = 2;
+    for (let i = 0; i < 9; i++) { const y = i * s / 9 + 6; g.beginPath(); g.moveTo(0, y); for (let x = 0; x <= s; x += 8) g.lineTo(x, y + Math.sin(x / 10 + i) * 3); g.stroke(); }
+  } },
+};
+const floorMats = {};
+function floorMat(name) {
+  if (!floorMats[name]) floorMats[name] = new THREE.MeshLambertMaterial({ map: canvasTexture(FLOOR_DEFS[name].size, FLOOR_DEFS[name].draw) });
+  return floorMats[name];
+}
+function floorMesh(x0, x1, z0, z1, name, y) {       // a textured rectangle of floor (the texture is tiled by world size)
+  const w = x1 - x0, d = z1 - z0, tile = FLOOR_DEFS[name].tile;
+  const geo = new THREE.PlaneGeometry(w, d), uv = geo.attributes.uv;
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * w / tile, uv.getY(i) * d / tile);
+  const m = new THREE.Mesh(geo, floorMat(name));
+  m.rotation.x = -Math.PI / 2; m.position.set((x0 + x1) / 2, y || 0, (z0 + z1) / 2); m.receiveShadow = true;
+  return m;
+}
+
+/* ---------------------------------------------------------------------
+   Furniture, trees, benches... (all drawn from simple boxes and cylinders).
+   Each builder draws around the origin; "back" is +z (the side against a wall).
+   --------------------------------------------------------------------- */
+const FLAT = new Set(['rug']);          // flat things aren't solid
+const BOOKS = [0xd9534f, 0x3aa6c9, 0xf0ad4e, 0x5cb85c, 0x8e5bd6, 0xf5f0e6];
+const FURN = {
+  rug(g, w, d, o) {
+    for (const [ww, dd, c, y] of [[w, d, o.c || 0xb5473f, 0.015], [w - 0.9, d - 0.9, o.c2 || 0xe8c27a, 0.02]]) {
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(ww, dd), mat(c)); m.rotation.x = -Math.PI / 2; m.position.y = y; m.receiveShadow = true; g.add(m);
+    }
+  },
+  sofa(g, w, d, o) {
+    const c = o.c || 0x2f6f8f, c2 = o.c2 || 0x2a6180, c3 = o.c3 || 0x3a82a8;
+    box(w, 0.55, d, c, 0, 0.3, 0, g); box(w, 1.0, 0.6, c2, 0, 0.9, d / 2 - 0.3, g);
+    box(0.6, 0.85, d, c2, -w / 2 + 0.3, 0.7, 0, g); box(0.6, 0.85, d, c2, w / 2 - 0.3, 0.7, 0, g);
+    const n = w > 4.5 ? 3 : (w > 2.6 ? 2 : 1), cw = (w - 1.2) / n;
+    for (let i = 0; i < n; i++) box(cw - 0.08, 0.3, d - 0.9, c3, -w / 2 + 0.6 + cw * (i + 0.5), 0.75, -0.15, g);
+  },
+  armchair(g, w, d) { FURN.sofa(g, w, d, { c: 0xb5654a, c2: 0x9c4f38, c3: 0xc77a5e }); },
+  table(g, w, d, o) {
+    const h = o.h || 0.78;
+    box(w, 0.16, d, o.c || 0x8a5a3c, 0, h, 0, g);
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) box(0.14, h, 0.14, 0x6b4429, sx * (w / 2 - 0.15), h / 2, sz * (d / 2 - 0.15), g);
+  },
+  dtable(g, w, d) {                      // dining table with chairs on both long sides
+    const td = d - 1.6, tw = w - 1.0;
+    box(tw, 0.18, td, 0x7a4b2c, 0, 0.85, 0, g); box(tw - 0.4, 0.82, td - 0.4, 0x5e3a22, 0, 0.41, 0, g);
+    const n = Math.max(2, Math.floor(tw / 1.8));
+    for (let i = 0; i < n; i++) {
+      const x = -tw / 2 + tw * (i + 0.5) / n;
+      for (const s of [-1, 1]) { box(0.9, 0.12, 0.9, 0xb5835a, x, 0.55, s * (d / 2 - 0.45), g); box(0.9, 0.9, 0.1, 0xa0714a, x, 1.0, s * (d / 2 - 0.05), g); }
+    }
+  },
+  tv(g, w, d) {
+    box(w, 0.8, d, 0x4b3a33, 0, 0.4, 0, g); box(w * 0.75, 1.3, 0.15, 0x1c1c22, 0, 1.45, 0.1, g); box(w * 0.7, 1.1, 0.05, 0x3f6f9f, 0, 1.45, -0.01, g).castShadow = false;
+  },
+  shelf(g, w, d, o) {
+    const h = o.h || 2.7;
+    box(w, h, d, 0x6b4a32, 0, h / 2, 0, g);
+    for (let row = 0; row < 3; row++) {
+      let x = -w / 2 + 0.2;
+      while (x < w / 2 - 0.35) { const bw = 0.18 + Math.random() * 0.16; box(bw, 0.62, 0.3, pick(BOOKS), x + bw / 2, 0.55 + row * 0.85, -d / 2 + 0.08, g).castShadow = false; x += bw + 0.03; }
+    }
+  },
+  counter(g, w, d, o) {
+    box(w, 1.25, d, o.c || 0xe9e2d4, 0, 0.625, 0, g); box(w + 0.1, 0.12, d + 0.1, o.top || 0x4a4a52, 0, 1.31, 0, g);
+    for (let x = -w / 2 + 0.9; x < w / 2 - 0.4; x += 1.8) box(1.6, 0.9, 0.05, 0xd2c8b4, x, 0.65, -d / 2 - 0.01, g).castShadow = false;
+  },
+  island(g, w, d) { FURN.counter(g, w, d, { c: 0xc8a27a, top: 0xf1ebe0 }); },
+  fridge(g, w, d) {
+    box(w, 2.9, d, 0xe8eef2, 0, 1.45, 0, g); box(0.08, 0.7, 0.1, 0x8a96a0, -w / 2 + 0.2, 1.9, -d / 2, g); box(w, 0.04, 0.04, 0x9aa6b0, 0, 1.95, -d / 2, g);
+  },
+  bed(g, w, d, o) {
+    box(w, 0.55, d, 0x7a5436, 0, 0.28, 0, g); box(w - 0.2, 0.45, d - 0.4, 0xf4efe6, 0, 0.8, -0.1, g);
+    box(w - 0.2, 0.2, d * 0.6, o.c || 0x3f8fbf, 0, 1.08, -d * 0.18, g);
+    box(w * 0.4, 0.25, 0.9, 0xffffff, -w * 0.22, 1.1, d / 2 - 0.8, g); box(w * 0.4, 0.25, 0.9, 0xffffff, w * 0.22, 1.1, d / 2 - 0.8, g);
+    box(w, 1.3, 0.25, 0x6a4529, 0, 0.95, d / 2 - 0.12, g);
+  },
+  dresser(g, w, d) {
+    box(w, 1.4, d, 0x9a6a45, 0, 0.7, 0, g);
+    for (let i = 0; i < 3; i++) box(w - 0.3, 0.3, 0.05, 0x75502f, 0, 0.35 + i * 0.4, -d / 2 - 0.01, g).castShadow = false;
+  },
+  wardrobe(g, w, d) {
+    box(w, 3.0, d, 0x8d6a4a, 0, 1.5, 0, g); box(0.05, 2.6, 0.05, 0x5a3f28, 0, 1.5, -d / 2 - 0.01, g).castShadow = false;
+    box(0.1, 0.3, 0.06, 0xe0c07a, -0.25, 1.5, -d / 2 - 0.03, g); box(0.1, 0.3, 0.06, 0xe0c07a, 0.25, 1.5, -d / 2 - 0.03, g);
+  },
+  desk(g, w, d) {
+    box(w, 0.12, d * 0.5, 0x9a6b45, 0, 0.85, d * 0.25, g);
+    for (const sx of [-1, 1]) box(0.14, 0.85, d * 0.45, 0x7a5436, sx * (w / 2 - 0.1), 0.42, d * 0.25, g);
+    box(0.9, 0.55, 0.08, 0x222228, 0, 1.3, d * 0.34, g); box(0.5, 0.05, 0.3, 0x333338, 0, 0.93, d * 0.2, g);
+    box(1.0, 0.12, 1.0, 0x333a44, 0, 0.55, -d * 0.2, g); box(1.0, 0.9, 0.12, 0x333a44, 0, 1.0, -d * 0.2 - 0.45, g); box(0.15, 0.55, 0.15, 0x222, 0, 0.27, -d * 0.2, g);
+  },
+  tub(g, w, d) {
+    box(w, 0.9, d, 0xf5f5f5, 0, 0.45, 0, g); box(w - 0.5, 0.12, d - 0.5, 0x9fd8ee, 0, 0.93, 0, g).castShadow = false;
+    cyl(0.07, 0.07, 0.5, 0xb5bcc4, 0, 1.15, d / 2 - 0.3, g, 8);
+  },
+  toilet(g, w, d) {
+    box(w * 0.7, 0.5, d * 0.5, 0xffffff, 0, 0.25, -d * 0.1, g); box(w * 0.85, 0.85, 0.45, 0xf2f2f2, 0, 0.85, d / 2 - 0.25, g); cyl(0.42, 0.42, 0.1, 0xe9e9e9, 0, 0.55, -d * 0.1, g, 14);
+  },
+  vanity(g, w, d) {
+    box(w, 0.95, d, 0xcdbfa6, 0, 0.475, 0, g); box(w + 0.1, 0.1, d + 0.1, 0xf0f0f0, 0, 1.0, 0, g);
+    cyl(0.45, 0.35, 0.12, 0x9fd0e0, -w * 0.2, 1.08, 0, g, 14); cyl(0.45, 0.35, 0.12, 0x9fd0e0, w * 0.2, 1.08, 0, g, 14);
+    box(w * 0.7, 1.3, 0.06, 0xbfe3f0, 0, 2.1, d / 2 - 0.03, g).castShadow = false;
+  },
+  washer(g, w, d) {
+    box(w, 1.1, d, 0xeeeeee, 0, 0.55, 0, g);
+    for (const sx of [-1, 1]) { const m = cyl(0.42, 0.42, 0.08, 0x7fa4c4, sx * w * 0.25, 0.6, -d / 2 - 0.02, g, 16); m.rotation.x = Math.PI / 2; }
+  },
+  car(g, w, d, o) {
+    box(w, 0.8, d, o.c || 0xc0392b, 0, 0.75, 0, g); box(w * 0.88, 0.75, d * 0.45, 0x8fc1de, 0, 1.5, -d * 0.04, g);
+    box(w * 0.9, 0.1, d * 0.46, o.c || 0xc0392b, 0, 1.9, -d * 0.04, g);
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) { const m = cyl(0.45, 0.45, 0.4, 0x222222, sx * (w / 2), 0.45, sz * d * 0.3, g, 14); m.rotation.z = Math.PI / 2; }
+    box(0.5, 0.2, 0.06, 0xffee99, -w * 0.3, 0.8, -d / 2 - 0.02, g).castShadow = false; box(0.5, 0.2, 0.06, 0xffee99, w * 0.3, 0.8, -d / 2 - 0.02, g).castShadow = false;
+  },
+  workbench(g, w, d) {
+    box(w, 0.15, d, 0xa9824f, 0, 1.0, 0, g); for (const sx of [-1, 1]) box(0.2, 1.0, d - 0.1, 0x6e5535, sx * (w / 2 - 0.2), 0.5, 0, g);
+    box(w - 0.4, 0.12, d - 0.2, 0x6e5535, 0, 0.35, 0, g); box(0.9, 0.3, 0.5, 0xd9534f, -w * 0.25, 1.25, 0, g); box(0.5, 0.2, 0.5, 0x555b66, w * 0.2, 1.2, 0, g);
+  },
+  toybox(g, w, d) {
+    box(w, 0.9, d, 0x4aa3df, 0, 0.45, 0, g); box(w + 0.1, 0.1, d + 0.1, 0xf5c542, 0, 0.95, 0, g);
+    for (let i = 0; i < 4; i++) box(0.4, 0.4, 0.4, pick([0xe8604c, 0x5cbf74, 0xf5c542]), -w * 0.3 + i * w * 0.2, 1.2, (i % 2 ? 0.2 : -0.2), g);
+  },
+  piano(g, w, d) {
+    box(w, 1.0, d, 0x1d1d22, 0, 0.5, 0, g); box(w + 0.1, 0.12, d + 0.1, 0x2a2a30, 0, 1.06, 0, g);
+    box(w * 0.9, 0.12, 0.6, 0xffffff, 0, 1.0, -d / 2 - 0.1, g); box(w * 0.6, 0.45, 0.35, 0x2a2a30, 0, 1.4, d * 0.35, g);
+    for (const sx of [-1, 1]) cyl(0.1, 0.1, 0.5, 0x111111, sx * (w / 2 - 0.2), -0.0, -d / 2 + 0.2, g, 8);
+  },
+  plant(g, w, d) {
+    cyl(0.5, 0.38, 0.7, 0xc8683c, 0, 0.35, 0, g, 12);
+    for (const [x, y, z, r, c] of [[0, 1.25, 0, 0.62, 0x3fa34d], [0.3, 1.75, 0.1, 0.42, 0x4bb85a], [-0.3, 1.65, -0.1, 0.45, 0x359648]]) ball(r, c, x, y, z, g);
+  },
+  pillar(g, w, d) {
+    box(w, 0.3, d, 0x7d7566, 0, 0.15, 0, g); box(w * 0.75, 2.2, d * 0.75, 0xb9ae98, 0, 1.4, 0, g); box(w, 0.3, d, 0x7d7566, 0, 2.65, 0, g);
+  },
+  crate(g, w, d) {
+    box(w, 1.3, d, 0xb98a54, 0, 0.65, 0, g);
+    box(w + 0.05, 0.14, d + 0.05, 0x8a6236, 0, 0.25, 0, g); box(w + 0.05, 0.14, d + 0.05, 0x8a6236, 0, 1.05, 0, g);
+    if (Math.random() < 0.4) box(w * 0.55, 0.7, d * 0.55, 0xa57746, 0.1, 1.65, 0, g);
+  },
+  ottoman(g, w, d, o) { cyl(w / 2, w / 2, 0.55, o.c || 0xe0903a, 0, 0.28, 0, g, 16); cyl(w / 2 - 0.1, w / 2 - 0.05, 0.12, 0xf2b36a, 0, 0.58, 0, g, 16); },
+  barrel(g, w) { cyl(w * 0.45, w * 0.45, 1.3, 0x3f6f9f, 0, 0.65, 0, g, 14); for (const y of [0.3, 1.0]) cyl(w * 0.47, w * 0.47, 0.08, 0x2a4666, 0, y, 0, g, 14); },
+  bin(g, w) { cyl(w * 0.42, w * 0.36, 0.9, 0x4b6b57, 0, 0.45, 0, g, 12); cyl(w * 0.46, w * 0.46, 0.1, 0x3b5545, 0, 0.95, 0, g, 12); },
+  dollhouse(g, w, d) {
+    box(w, 1.6, d, 0xf2a5b8, 0, 0.8, 0, g); const r = new THREE.Mesh(new THREE.ConeGeometry(w * 0.75, 1.0, 4), mat(0xd9534f)); r.position.y = 2.1; r.rotation.y = Math.PI / 4; r.castShadow = true; g.add(r);
+    box(0.5, 0.9, 0.05, 0x8a5a3c, 0, 0.45, -d / 2 - 0.02, g).castShadow = false; box(0.5, 0.5, 0.05, 0x8fc1de, -w * 0.28, 1.0, -d / 2 - 0.02, g).castShadow = false;
+  },
+  tent(g, w, d) {
+    const t = new THREE.Mesh(new THREE.ConeGeometry(w * 0.72, 2.2, 4), mat(0x5cbf74)); t.position.y = 1.1; t.rotation.y = Math.PI / 4; t.castShadow = true; g.add(t);
+    const s = new THREE.Mesh(new THREE.ConeGeometry(w * 0.3, 1.2, 4), mat(0xf5c542)); s.position.set(0, 0.6, -w * 0.45); s.rotation.y = Math.PI / 4; g.add(s);
+  },
+  partition(g, w, d) { box(w, 2.2, d, 0xbfd9e6, 0, 1.1, 0, g); },
+  hbench(g, w, d) { box(w, 0.18, d, 0x6b4a32, 0, 0.75, 0, g); for (const sx of [-1, 1]) box(0.18, 0.75, d - 0.1, 0x3a2a1e, sx * (w / 2 - 0.2), 0.37, 0, g); },
+  pedestal(g, w, d) { box(w, 1.2, d, 0xcfc8b8, 0, 0.6, 0, g); ball(0.5, 0xd8b04a, 0, 1.75, 0, g); cyl(0.2, 0.3, 0.5, 0xd8b04a, 0, 1.3, 0, g, 10); },
+  /* park */
+  tree(g, w, d, o) {
+    cyl(0.28, 0.4, 2.4, 0x6b4a2f, 0, 1.2, 0, g, 10);
+    const m = mat(o.c || 0x3f9c4d, { transparent: true, opacity: 0.78 });
+    for (const [x, y, z, r] of [[0, 3.5, 0, 1.9], [0.9, 3.0, 0.5, 1.3], [-0.8, 3.1, -0.4, 1.4], [0.1, 4.3, 0, 1.2]]) {
+      const s = new THREE.Mesh(new THREE.IcosahedronGeometry(r, 1), m); s.position.set(x, y, z); s.castShadow = true; g.add(s);
+    }
+  },
+  pbench(g, w, d) {
+    box(w, 0.15, d, 0x9a6b3f, 0, 0.6, -0.05, g); box(w, 0.6, 0.12, 0x8a5c33, 0, 1.0, d / 2 - 0.08, g);
+    for (const sx of [-1, 1]) box(0.12, 0.6, d - 0.1, 0x3a3a40, sx * (w / 2 - 0.25), 0.3, 0, g);
+  },
+  bush(g, w, d) {
+    const s = new THREE.Mesh(new THREE.SphereGeometry(1, 14, 10), mat(0x2f8f46)); s.scale.set(w / 2, 0.78, d / 2); s.position.y = 0.7; s.castShadow = true; g.add(s);
+    for (let i = 0; i < 5; i++) ball(0.12, pick([0xff7aa8, 0xffd84d, 0xffffff]), rand(-w * 0.3, w * 0.3), rand(0.9, 1.4), rand(-d * 0.3, d * 0.3), g).castShadow = false;
+  },
+  flowerbed(g, w, d) {
+    box(w, 0.4, d, 0xa8a090, 0, 0.2, 0, g); box(w - 0.4, 0.1, d - 0.4, 0x5b3d26, 0, 0.42, 0, g);
+    for (let i = 0; i < 16; i++) { const f = ball(0.16, pick([0xff7aa8, 0xffd84d, 0xffffff, 0xc77dff, 0xff9b54]), rand(-w / 2 + 0.4, w / 2 - 0.4), 0.7, rand(-d / 2 + 0.4, d / 2 - 0.4), g); f.castShadow = false; }
+  },
+  picnic(g, w, d) {
+    box(w - 0.4, 0.14, d * 0.5, 0x9a6b3f, 0, 0.95, 0, g); box(w - 0.3, 0.02, d * 0.5 + 0.05, 0xe05a5a, 0, 1.03, 0, g).castShadow = false;
+    for (const s of [-1, 1]) { box(w - 0.4, 0.12, 0.6, 0x8a5c33, 0, 0.55, s * (d / 2 - 0.35), g); }
+    for (const sx of [-1, 1]) box(0.14, 0.95, d * 0.5, 0x6b4429, sx * (w / 2 - 0.5), 0.47, 0, g);
+  },
+  fountain(g, w) {
+    cyl(w / 2, w / 2, 0.7, 0xbdb6a8, 0, 0.35, 0, g, 24); cyl(w / 2 - 0.3, w / 2 - 0.3, 0.05, 0x59b4e8, 0, 0.72, 0, g, 24).castShadow = false;
+    cyl(0.35, 0.5, 1.3, 0xcfc8b8, 0, 1.3, 0, g, 12); cyl(1.0, 0.5, 0.25, 0xcfc8b8, 0, 2.0, 0, g, 16); ball(0.3, 0x8fd3ff, 0, 2.3, 0, g);
+  },
+  rock(g, w, d) { const m = new THREE.Mesh(new THREE.DodecahedronGeometry(1), mat(0x8c8f96)); m.scale.set(w / 2, 0.75, d / 2); m.position.y = 0.55; m.rotation.y = rand(0, 6); m.castShadow = true; g.add(m); },
+  lamp(g) { cyl(0.1, 0.14, 2.6, 0x2f2f36, 0, 1.3, 0, g, 8); const l = ball(0.32, 0xfff3b0, 0, 2.75, 0, g); l.material = new THREE.MeshLambertMaterial({ color: 0xfff3b0, emissive: 0xffe680, emissiveIntensity: 0.6 }); },
+};
+
+/* ---------------------------------------------------------------------
+   The maps.  Rooms sit on a grid; between neighbouring rooms is a gap that is
+   crossed by corridors (house) or bridges over canals (park).
+   links: [roomA, roomB, offset]
+     - B is EAST of A: offset = where the door is (z, measured from A's top edge)
+     - B is SOUTH of A: offset = where the door is (x, measured from A's left edge)
+   Furniture: [kind, x, z, width, depth, rotation, options] in room coordinates
+   (rotation = which wall the BACK faces: 0 south, 90 east, 180 north, 270 west).
+   --------------------------------------------------------------------- */
+const HOUSE_SCAT = ['crate', 'ottoman', 'plant', 'barrel', 'cratepair'];
+const PARK_SCAT = ['tree', 'tree', 'tree', 'tree', 'tree', 'tree', 'tree', 'pbench', 'pbench', 'bush', 'bush', 'flowerbed', 'flowerbed', 'rock', 'rock', 'lamp', 'bin', 'picnic', 'bushpair'];
+const MAPS = {
+  house: {
+    label: 'House', bg: 0x1b1426, style: 'house', seed: 7, itemSet: 'house', itemsPerRoom: 6,
+    colW: [20, 22, 20], rowD: [13, 14, 13], gap: 3,
+    catStart: [3, 5, 3], ownerStart: [8, 8, 8],
+    links: [
+      [0, 1, 6.5], [1, 2, 4], [3, 4, 8], [4, 5, 5.5], [6, 7, 4.5], [7, 8, 8],            // doors between neighbours (west-east)
+      [0, 3, 14], [3, 6, 5], [1, 4, 7], [4, 7, 15], [2, 5, 6], [5, 8, 14],                // doors between neighbours (north-south)
+    ],
+    rooms: [
+      { name: 'Kitchen', floor: 'tile', scatter: { n: 4, kinds: HOUSE_SCAT }, furn: [
+        ['counter', 6, 0.65, 12, 1.3, 180], ['counter', 0.65, 8.75, 1.3, 8.5, 270], ['fridge', 19.3, 0.7, 1.4, 1.4, 180],
+        ['island', 9, 6.2, 5, 2.2, 0], ['ottoman', 7, 8.6, 1, 1, 0, { c: 0xd9534f }], ['ottoman', 9.2, 8.6, 1, 1, 0, { c: 0xd9534f }], ['bin', 19.2, 11.8, 1, 1, 0] ] },
+      { name: 'Dining room', floor: 'wood', scatter: { n: 3, kinds: HOUSE_SCAT }, furn: [
+        ['rug', 12, 5.8, 11, 6.4, 0, { c: 0x2f5d62, c2: 0x8fb8a8 }], ['dtable', 12, 5.8, 8.4, 3.6, 0],
+        ['shelf', 6, 0.65, 6, 1.3, 180], ['shelf', 17, 0.65, 4.5, 1.3, 180],
+        ['plant', 1.2, 1.2, 1.3, 1.3, 0], ['plant', 20.8, 11.8, 1.3, 1.3, 0], ['pillar', 12, 12.4, 1.2, 1.2, 0], ['pillar', 15.5, 12.4, 1.2, 1.2, 0] ] },
+      { name: 'Study', floor: 'carpetG', scatter: { n: 3, kinds: HOUSE_SCAT }, furn: [
+        ['rug', 10, 7.5, 8, 5, 0, { c: 0x4a2f5a, c2: 0xb592c8 }], ['shelf', 4.5, 0.65, 9, 1.3, 180], ['shelf', 14.5, 0.65, 11, 1.3, 180],
+        ['desk', 14, 7.5, 4, 3.2, 0], ['armchair', 18, 11.8, 2.2, 2.2, 0], ['pillar', 9, 8.5, 1.1, 1.1, 0],
+        ['dresser', 19.35, 6, 1.3, 4, 90], ['plant', 1.2, 11.8, 1.3, 1.3, 0] ] },
+      { name: 'Living room', floor: 'wood', scatter: { n: 3, kinds: HOUSE_SCAT }, furn: [
+        ['rug', 11, 6.2, 9, 6.6, 0, { c: 0xb5473f }], ['sofa', 1.3, 7, 2.4, 7, 270], ['tv', 8.5, 0.7, 5, 1.4, 180],
+        ['table', 11, 5, 3.4, 1.8, 0], ['sofa', 11, 10, 7, 2.4, 0], ['armchair', 17.8, 4.2, 2.2, 2.2, 90],
+        ['shelf', 19.35, 12, 1.3, 3.4, 90], ['plant', 18.8, 1.2, 1.3, 1.3, 0], ['plant', 7, 12.8, 1.3, 1.3, 0] ] },
+      { name: 'Grand hall', floor: 'marble', scatter: { n: 2, kinds: ['ottoman', 'plant'] }, furn: [
+        ['rug', 11, 7.2, 15, 3.2, 0, { c: 0x7a2b3a, c2: 0xc98a6a }], ['piano', 1.7, 1.3, 3.4, 2.6, 180],
+        ['pillar', 9.5, 6, 1.4, 1.4, 0], ['pillar', 13.5, 6, 1.4, 1.4, 0], ['pillar', 9.5, 10, 1.4, 1.4, 0], ['pillar', 13.5, 10, 1.4, 1.4, 0],
+        ['hbench', 11.5, 8, 3.4, 1.1, 0], ['pedestal', 11, 1.6, 1.6, 1.6, 0],
+        ['plant', 1.2, 12.8, 1.3, 1.3, 0], ['plant', 20.8, 12.8, 1.3, 1.3, 0], ['plant', 20.8, 1.2, 1.3, 1.3, 0] ] },
+      { name: 'Bedroom', floor: 'carpetP', scatter: { n: 4, kinds: HOUSE_SCAT }, furn: [
+        ['rug', 10, 8.2, 8, 5, 0, { c: 0x5a3f7a, c2: 0xcbb6e8 }], ['bed', 18.2, 2.3, 3.4, 4.6, 180], ['table', 15.9, 0.8, 1.2, 1.2, 0, { h: 0.6 }],
+        ['wardrobe', 19.35, 9.5, 1.3, 4.5, 90], ['dresser', 5, 13.3, 4, 1.4, 0], ['desk', 2, 1.3, 3, 2.6, 180], ['plant', 1.2, 12.8, 1.3, 1.3, 0] ] },
+      { name: 'Bathroom', floor: 'bath', scatter: { n: 4, kinds: ['ottoman', 'barrel', 'plant'] }, furn: [
+        ['rug', 12, 7, 4, 2.4, 0, { c: 0x6fb7c9, c2: 0xbfe6ee }], ['tub', 1.4, 9, 2.8, 6, 270], ['vanity', 14, 0.7, 6, 1.4, 180],
+        ['toilet', 19.3, 11.5, 1.4, 1.6, 90], ['washer', 16.5, 12.3, 3.4, 1.4, 0], ['partition', 9, 9.5, 0.4, 4.4, 0] ] },
+      { name: 'Playroom', floor: 'playmat', scatter: { n: 7, kinds: ['crate', 'ottoman', 'cratepair', 'plant'] }, furn: [
+        ['toybox', 2, 12.3, 4, 1.4, 0], ['toybox', 12, 12.3, 3, 1.4, 0], ['dollhouse', 4.5, 0.9, 3.6, 1.8, 180], ['tent', 8, 7.5, 3.4, 3.4, 0] ] },
+      { name: 'Garage', floor: 'concrete', scatter: { n: 5, kinds: ['crate', 'barrel', 'cratepair'] }, furn: [
+        ['car', 17.2, 8, 3.8, 8, 0], ['workbench', 5, 0.8, 7, 1.6, 180], ['shelf', 0.7, 3, 1.4, 4, 270], ['barrel', 8.2, 5, 1.1, 1.1, 0], ['barrel', 9.4, 5.2, 1.1, 1.1, 0] ] },
+    ],
+  },
+  park: {
+    label: 'Park', bg: 0x0f2a1d, style: 'park', seed: 23, itemSet: 'park', itemsPerRoom: 7,
+    colW: [29, 29], rowD: [18, 18, 18], gap: 4,
+    catStart: [0, 5, 5], ownerStart: [5, 23, 12],
+    links: [
+      [0, 1, 5], [2, 3, 12], [4, 5, 6],                         // bridges across the middle canal (west-east)
+      [0, 2, 8], [0, 2, 21], [2, 4, 20], [1, 3, 20], [3, 5, 7],   // bridges across the two cross canals (north-south)
+    ],
+    rooms: [
+      { name: 'Rose garden', floor: 'grass', scatter: { n: 15, kinds: PARK_SCAT }, furn: [] },
+      { name: 'Picnic lawn', floor: 'grass', scatter: { n: 15, kinds: PARK_SCAT }, furn: [] },
+      { name: 'Fountain plaza', floor: 'grass', scatter: { n: 13, kinds: PARK_SCAT }, furn: [['fountain', 14.5, 9, 4.6, 4.6, 0]] },
+      { name: 'Birch grove', floor: 'grass', scatter: { n: 16, kinds: PARK_SCAT }, furn: [] },
+      { name: 'Orchard', floor: 'grass', scatter: { n: 15, kinds: PARK_SCAT }, furn: [] },
+      { name: 'Meadow', floor: 'grass', scatter: { n: 15, kinds: PARK_SCAT }, furn: [['fountain', 14.5, 9, 4.6, 4.6, 0]] },
+    ],
+  },
+};
+const SCAT = {   // extra clutter scattered in each room: the owner has to find a way round it
+  crate: { wx: 1.5, wz: 1.5, kind: 'crate' }, ottoman: { wx: 1.2, wz: 1.2, kind: 'ottoman' }, plant: { wx: 1.2, wz: 1.2, kind: 'plant' },
+  barrel: { wx: 1.1, wz: 1.1, kind: 'barrel' },
+  cratepair: { wx: 4.6, wz: 1.5, rot: true, parts: [['crate', -1.55, 0, 1.5, 1.5], ['crate', 1.55, 0, 1.5, 1.5]] },   // two crates with a gap only a cat fits through
+  tree: { wx: 1.3, wz: 1.3, kind: 'tree' }, pbench: { wx: 3.4, wz: 1.1, kind: 'pbench', rot: true }, bush: { wx: 2.0, wz: 2.0, kind: 'bush' },
+  bushpair: { wx: 5.6, wz: 2.0, rot: true, parts: [['bush', -1.8, 0, 2, 2], ['bush', 1.8, 0, 2, 2]] },
+  flowerbed: { wx: 4.0, wz: 2.0, kind: 'flowerbed', rot: true }, picnic: { wx: 3.6, wz: 2.6, kind: 'picnic', rot: true },
+  rock: { wx: 1.7, wz: 1.7, kind: 'rock' }, lamp: { wx: 0.7, wz: 0.7, kind: 'lamp' }, bin: { wx: 0.9, wz: 0.9, kind: 'bin' },
+};
+
+/* ---------------------------------------------------------------------
+   Building a map
+   --------------------------------------------------------------------- */
+function wallRuns(lo, hi, holes) {      // [lo,hi] with the holes cut out
+  const hs = holes.slice().sort((p, q) => p[0] - q[0]), out = []; let cur = lo;
+  for (const [a, b] of hs) { if (a > cur) out.push([cur, a]); cur = Math.max(cur, b); }
+  if (cur < hi) out.push([cur, hi]);
+  return out;
+}
+function addSolid(w, x0, x1, z0, z1) { w.solids.push({ x0, x1, z0, z1 }); }
+function wallBlock(g, x0, x1, z0, z1, h, color, cap) {
+  box(x1 - x0, h, z1 - z0, color, (x0 + x1) / 2, h / 2, (z0 + z1) / 2, g);
+  box(x1 - x0 + 0.02, 0.12, z1 - z0 + 0.02, cap, (x0 + x1) / 2, h + 0.06, (z0 + z1) / 2, g).castShadow = false;
+}
+function addFurn(w, zone, kind, cx, cz, wx, wz, rot, o) {   // cx,cz are world coordinates
+  const g = new THREE.Group(); g.position.set(cx, 0, cz); g.rotation.y = (rot || 0) * Math.PI / 180;
+  const swap = rot === 90 || rot === 270;
+  FURN[kind](g, swap ? wz : wx, swap ? wx : wz, o || {});
+  zone.group.add(g);
+  let solid = null;
+  if (!FLAT.has(kind)) { addSolid(w, cx - wx / 2, cx + wx / 2, cz - wz / 2, cz + wz / 2); solid = w.solids[w.solids.length - 1]; }
+  return { g, solid };
+}
+function removeScattered(w, zone, entry) {
+  for (const p of entry.parts) { zone.group.remove(p.g); const i = w.solids.indexOf(p.solid); if (i >= 0) w.solids.splice(i, 1); }
+  zone.scattered.splice(zone.scattered.indexOf(entry), 1);
+}
+/* Cells the cat can reach but where the owner could never get within catching distance (a safe hiding place). */
+function findHiding(w) {
+  const { gw, gh } = w, cf = w.catPhys.reachable(w.catStart.x, w.catStart.z), of = w.ownerNav.reachable(w.ownerStart.x, w.ownerStart.z);
+  const near = new Uint8Array(gw * gh), reach = CATCH_DIST / CELL;
+  for (let i = 0; i < gw * gh; i++) {
+    if (!of[i]) continue;
+    const ix = i % gw, iz = (i / gw) | 0;
+    for (let dz = -3; dz <= 3; dz++) for (let dx = -3; dx <= 3; dx++) {
+      if (dx * dx + dz * dz > reach * reach) continue;
+      const x = ix + dx, z = iz + dz;
+      if (x >= 0 && z >= 0 && x < gw && z < gh) near[z * gw + x] = 1;
+    }
+  }
+  const out = [];
+  for (let i = 0; i < gw * gh; i++) if (cf[i] && !near[i]) out.push(i);
+  return out;
+}
+function reservedRects(w, zone) {       // places scattered clutter must stay out of: in front of doors, around the start spots
+  const out = [];
+  for (const l of zone.links) {
+    if (l.axis === 'x') out.push(l.a === zone ? { x0: zone.x1 - 3.5, x1: zone.x1, z0: l.z0 - 0.5, z1: l.z1 + 0.5 } : { x0: zone.x0, x1: zone.x0 + 3.5, z0: l.z0 - 0.5, z1: l.z1 + 0.5 });
+    else out.push(l.a === zone ? { x0: l.x0 - 0.5, x1: l.x1 + 0.5, z0: zone.z1 - 3.5, z1: zone.z1 } : { x0: l.x0 - 0.5, x1: l.x1 + 0.5, z0: zone.z0, z1: zone.z0 + 3.5 });
+  }
+  for (const s of [w.catStart, w.ownerStart]) if (s.room === zone) out.push({ x0: s.x - 3.2, x1: s.x + 3.2, z0: s.z - 3.2, z1: s.z + 3.2 });
+  return out;
+}
+function scatterClutter(w, zone, spec, R) {
+  const reserved = reservedRects(w, zone); let placed = 0;
+  for (let tries = 0; placed < spec.n && tries < 1500; tries++) {
+    const def = SCAT[spec.kinds[(R() * spec.kinds.length) | 0]];
+    const turn = def.rot && R() < 0.5, wx = turn ? def.wz : def.wx, wz = turn ? def.wx : def.wz;
+    const cx = zone.x0 + wx / 2 + R() * (zone.x1 - zone.x0 - wx), cz = zone.z0 + wz / 2 + R() * (zone.z1 - zone.z0 - wz);
+    const rc = { x0: cx - wx / 2, x1: cx + wx / 2, z0: cz - wz / 2, z1: cz + wz / 2 };
+    if (!laneOK(w.solids, rc, 1.25, 2.6) || reserved.some(r => rectsOverlap(rc, r))) continue;   // lanes are either blocked or wide enough for the owner
+    const entry = { cx, cz, parts: [] };
+    if (def.parts) for (const [kind, dx, dz, pw, pd] of def.parts) entry.parts.push(addFurn(w, zone, kind, cx + (turn ? dz : dx), cz + (turn ? dx : dz), pw, pd, 0, {}));
+    else entry.parts.push(addFurn(w, zone, def.kind, cx, cz, wx, wz, turn ? 90 : 0, {}));
+    zone.scattered.push(entry);
+    placed++;
+  }
+}
+
+function buildWorld(key) {
+  const def = MAPS[key], R = mulberry32(def.seed), cols = def.colW.length, rows = def.rowD.length;
+  const w = { key, def, group: new THREE.Group(), solids: [], zones: [], rooms: [], links: [], fits: [] };
+  const colX = [], rowZ = []; let acc = 0;
+  for (let c = 0; c < cols; c++) { colX[c] = acc; acc += def.colW[c] + def.gap; } w.W = acc - def.gap;
+  acc = 0; for (let r = 0; r < rows; r++) { rowZ[r] = acc; acc += def.rowD[r] + def.gap; } w.D = acc - def.gap;
+
+  def.rooms.forEach((rd, i) => {         // rooms (areas, in the park)
+    const c = i % cols, r = (i / cols) | 0;
+    const z = { id: i, kind: 'room', name: rd.name, c, r, x0: colX[c], x1: colX[c] + def.colW[c], z0: rowZ[r], z1: rowZ[r] + def.rowD[r], links: [], group: new THREE.Group(), itemGroup: new THREE.Group(), debrisGroup: new THREE.Group(), count: 0, scattered: [], rd };
+    z.group.add(z.itemGroup, z.debrisGroup); w.group.add(z.group); w.zones.push(z); w.rooms.push(z);
+  });
+  def.links.forEach(([ia, ib, off]) => {  // corridors (bridges, in the park)
+    const A = w.rooms[ia], B = w.rooms[ib], l = { id: w.zones.length, kind: 'link', a: A, b: B, group: new THREE.Group(), links: [] };
+    if (B.c === A.c + 1 && B.r === A.r) { l.axis = 'x'; l.x0 = A.x1; l.x1 = B.x0; l.z0 = A.z0 + off - DOOR_W / 2; l.z1 = l.z0 + DOOR_W; }
+    else if (B.r === A.r + 1 && B.c === A.c) { l.axis = 'z'; l.z0 = A.z1; l.z1 = B.z0; l.x0 = A.x0 + off - DOOR_W / 2; l.x1 = l.x0 + DOOR_W; }
+    else throw new Error('link between rooms that are not neighbours: ' + ia + ',' + ib);
+    A.links.push(l); B.links.push(l); w.group.add(l.group); w.zones.push(l); w.links.push(l);
+  });
+  const place = ([ri, lx, lz]) => ({ room: w.rooms[ri], x: w.rooms[ri].x0 + lx, z: w.rooms[ri].z0 + lz });
+  w.catStart = place(def.catStart); w.ownerStart = place(def.ownerStart);
+
+  if (def.style === 'house') buildHouseShell(w); else buildParkShell(w);
+
+  for (const z of w.rooms) {             // hand-placed furniture, then scattered clutter
+    z.group.add(floorMesh(z.x0, z.x1, z.z0, z.z1, z.rd.floor));
+    for (const [kind, lx, lz, wx, wz, rot, o] of z.rd.furn) addFurn(w, z, kind, z.x0 + lx, z.z0 + lz, wx, wz, rot, o);
+  }
+  for (const z of w.rooms) if (z.rd.scatter) scatterClutter(w, z, z.rd.scatter, R);
+
+  // which room/corridor is each grid cell in?
+  w.gw = Math.ceil(w.W / CELL); w.gh = Math.ceil(w.D / CELL); w.zoneGrid = new Int16Array(w.gw * w.gh).fill(-1);
+  for (const z of w.zones) {
+    for (let iz = Math.floor(z.z0 / CELL); iz < Math.ceil(z.z1 / CELL); iz++) for (let ix = Math.floor(z.x0 / CELL); ix < Math.ceil(z.x1 / CELL); ix++) {
+      const cx = (ix + 0.5) * CELL, cz = (iz + 0.5) * CELL;
+      if (cx >= z.x0 && cx < z.x1 && cz >= z.z0 && cz < z.z1 && ix >= 0 && iz >= 0 && ix < w.gw && iz < w.gh) w.zoneGrid[iz * w.gw + ix] = z.id;
+    }
+  }
+  // catPhys = where the cat's body physically fits (used to check for hiding places); catNav plans routes with a wider berth, so the cat
+  // glides round furniture and corners instead of scraping along them
+  const buildNavs = () => { w.catPhys = new NavGrid(w, CAT_BODY + 0.1); w.catNav = new NavGrid(w, CAT_BODY + 0.35); w.ownerNav = new NavGrid(w, OWNER_R + 0.05); };
+  buildNavs();
+  // No safe hiding places: while there is a spot only the cat can reach, remove the nearest piece of clutter to open it up
+  for (let guard = 0; guard < 60; guard++) {
+    const hid = findHiding(w);
+    if (!hid.length) break;
+    let hx = 0, hz = 0; for (const i of hid) { hx += w.catNav.cellX(i); hz += w.catNav.cellZ(i); } hx /= hid.length; hz /= hid.length;
+    let best = null, bd = 1e9, bz = null;
+    for (const z of w.rooms) for (const e of z.scattered) { const d = Math.hypot(e.cx - hx, e.cz - hz); if (d < bd) { bd = d; best = e; bz = z; } }
+    if (!best) { console.warn('hiding place left in ' + key); break; }
+    removeScattered(w, bz, best); buildNavs();
+  }
+  w.catReach = w.catNav.reachable(w.catStart.x, w.catStart.z);      // spots the cat can walk to (breakable things only appear there)
+  return w;
+}
+
+function buildHouseShell(w) {
+  const T = WALL_T, H = { N: 3.8, S: 0.8, W: 2.4, E: 2.4 };
+  for (const z of w.rooms) {
+    const holes = { N: [], S: [], W: [], E: [] };
+    for (const l of z.links) {
+      if (l.axis === 'x') (l.a === z ? holes.E : holes.W).push([l.z0, l.z1]); else (l.a === z ? holes.S : holes.N).push([l.x0, l.x1]);
+    }
+    const seg = (side, a, b) => {
+      const r = side === 'N' ? [a, b, z.z0 - T, z.z0] : side === 'S' ? [a, b, z.z1, z.z1 + T] : side === 'W' ? [z.x0 - T, z.x0, a, b] : [z.x1, z.x1 + T, a, b];
+      addSolid(w, r[0], r[1], r[2], r[3]); wallBlock(z.group, r[0], r[1], r[2], r[3], H[side], 0xf3e7d3, 0xc9b79a);
+    };
+    for (const [a, b] of wallRuns(z.x0 - T, z.x1 + T, holes.N)) seg('N', a, b);
+    for (const [a, b] of wallRuns(z.x0 - T, z.x1 + T, holes.S)) seg('S', a, b);
+    for (const [a, b] of wallRuns(z.z0, z.z1, holes.W)) seg('W', a, b);
+    for (const [a, b] of wallRuns(z.z0, z.z1, holes.E)) seg('E', a, b);
+    for (const wx of [z.x0 + (z.x1 - z.x0) * 0.27, z.x0 + (z.x1 - z.x0) * 0.73]) {   // windows on the back wall
+      if (holes.N.some(([a, b]) => wx + 1.7 > a && wx - 1.7 < b)) continue;
+      box(3.4, 1.7, 0.12, 0x8b6b4a, wx, 2.5, z.z0 + 0.07, z.group).castShadow = false;
+      box(3.0, 1.3, 0.14, 0xa9dcff, wx, 2.5, z.z0 + 0.08, z.group).castShadow = false;
+      box(0.1, 1.3, 0.16, 0x8b6b4a, wx, 2.5, z.z0 + 0.09, z.group).castShadow = false;
+    }
+  }
+  for (const l of w.links) {              // corridors
+    l.group.add(floorMesh(l.x0, l.x1, l.z0, l.z1, 'wood', 0.01));
+    const sides = l.axis === 'x' ? [[l.x0, l.x1, l.z0 - T, l.z0], [l.x0, l.x1, l.z1, l.z1 + T]] : [[l.x0 - T, l.x0, l.z0, l.z1], [l.x1, l.x1 + T, l.z0, l.z1]];
+    for (const [x0, x1, z0, z1] of sides) { addSolid(w, x0, x1, z0, z1); wallBlock(l.group, x0, x1, z0, z1, 1.8, 0xe9dcc4, 0xc9b79a); }
+  }
+}
+
+function buildParkShell(w) {
+  const T = 1.0, g = w.group;
+  const water = floorMesh(0, w.W, 0, w.D, 'water', -0.2);             // one big lake under everything; the areas sit on top of it
+  water.receiveShadow = false; g.add(water); w.water = floorMat('water').map;
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(w.W + 80, w.D + 80), mat(0x1d4a2c)); ground.rotation.x = -Math.PI / 2; ground.position.set(w.W / 2, -0.3, w.D / 2); g.add(ground);
+  for (const z of w.rooms) {              // each area: a raised grass slab with a stone edge
+    box(z.x1 - z.x0, 0.5, z.z1 - z.z0, 0x8f8a7c, (z.x0 + z.x1) / 2, -0.26, (z.z0 + z.z1) / 2, g);
+    const holes = { N: [], S: [], W: [], E: [] };
+    for (const l of z.links) {
+      if (l.axis === 'x') (l.a === z ? holes.E : holes.W).push([l.z0, l.z1]); else (l.a === z ? holes.S : holes.N).push([l.x0, l.x1]);
+    }
+    const curb = (a, b, x0, x1, z0, z1) => box(x1 - x0, 0.35, z1 - z0, 0xcfc8b8, (x0 + x1) / 2, 0.17, (z0 + z1) / 2, g);
+    const C = 0.5;
+    if (z.r > 0) for (const [a, b] of wallRuns(z.x0, z.x1, holes.N)) curb(a, b, a, b, z.z0 - C, z.z0);
+    if (z.r < w.def.rowD.length - 1) for (const [a, b] of wallRuns(z.x0, z.x1, holes.S)) curb(a, b, a, b, z.z1, z.z1 + C);
+    if (z.c > 0) for (const [a, b] of wallRuns(z.z0, z.z1, holes.W)) curb(a, b, z.x0 - C, z.x0, a, b);
+    if (z.c < w.def.colW.length - 1) for (const [a, b] of wallRuns(z.z0, z.z1, holes.E)) curb(a, b, z.x1, z.x1 + C, a, b);
+  }
+  // water is solid except where a bridge crosses it
+  for (let c = 0; c < w.def.colW.length - 1; c++) {
+    const x0 = w.rooms[c].x1, x1 = w.rooms[c + 1].x0;
+    const cuts = w.links.filter(l => l.axis === 'x' && l.a.c === c).map(l => [l.z0, l.z1]);
+    for (const [a, b] of wallRuns(0, w.D, cuts)) addSolid(w, x0, x1, a, b);
+  }
+  for (let r = 0; r < w.def.rowD.length - 1; r++) {
+    const z0 = w.rooms[r * w.def.colW.length].z1, z1 = w.rooms[(r + 1) * w.def.colW.length].z0;
+    const cuts = w.links.filter(l => l.axis === 'z' && l.a.r === r).map(l => [l.x0, l.x1]);
+    for (const [a, b] of wallRuns(0, w.W, cuts)) addSolid(w, a, b, z0, z1);
+  }
+  for (const l of w.links) {              // bridges: wooden deck, rails, and a paved path leading to each end
+    const len = l.axis === 'x' ? l.x1 - l.x0 : l.z1 - l.z0, wid = DOOR_W, cx = (l.x0 + l.x1) / 2, cz = (l.z0 + l.z1) / 2;
+    const deck = l.axis === 'x' ? [len + 0.6, 0.2, wid] : [wid, 0.2, len + 0.6];
+    box(deck[0], deck[1], deck[2], 0x9a6b3f, cx, 0.0, cz, l.group);
+    for (const s of [-1, 1]) {
+      const rl = l.axis === 'x' ? [len, 0.12, 0.14, cx, 0.85, cz + s * (wid / 2 - 0.1)] : [0.14, 0.12, len, cx + s * (wid / 2 - 0.1), 0.85, cz];
+      box(rl[0], rl[1], rl[2], 0x6b4429, rl[3], rl[4], rl[5], l.group);
+      for (let k = 0; k <= 4; k++) {
+        const t = -len / 2 + len * k / 4;
+        box(0.18, 0.9, 0.18, 0x6b4429, l.axis === 'x' ? cx + t : cx + s * (wid / 2 - 0.1), 0.45, l.axis === 'x' ? cz + s * (wid / 2 - 0.1) : cz + t, l.group);
+      }
+    }
+    const P = 7;
+    if (l.axis === 'x') { l.group.add(floorMesh(l.x0 - P, l.x0, l.z0, l.z1, 'stone', 0.012), floorMesh(l.x1, l.x1 + P, l.z0, l.z1, 'stone', 0.012)); }
+    else { l.group.add(floorMesh(l.x0, l.x1, l.z0 - P, l.z0, 'stone', 0.012), floorMesh(l.x0, l.x1, l.z1, l.z1 + P, 'stone', 0.012)); }
+  }
+  // the square wall around the whole park
+  const bt = canvasTexture(FLOOR_DEFS.brick.size, FLOOR_DEFS.brick.draw);
+  const bw = (x0, x1, z0, z1, h) => {
+    addSolid(w, x0, x1, z0, z1);
+    const len = Math.max(x1 - x0, z1 - z0), t = bt.clone(); t.needsUpdate = true; t.repeat.set(len / 4, 1);
+    const m = new THREE.Mesh(new THREE.BoxGeometry(x1 - x0, h, z1 - z0), new THREE.MeshLambertMaterial({ map: t }));
+    m.position.set((x0 + x1) / 2, h / 2, (z0 + z1) / 2); m.castShadow = m.receiveShadow = true; g.add(m);
+    box(x1 - x0 + 0.1, 0.15, z1 - z0 + 0.1, 0xcfc8b8, (x0 + x1) / 2, h + 0.07, (z0 + z1) / 2, g).castShadow = false;
+  };
+  bw(-T, w.W + T, -T, 0, 2.6); bw(-T, w.W + T, w.D, w.D + T, 0.9); bw(-T, 0, 0, w.D, 2.2); bw(w.W, w.W + T, 0, w.D, 2.2);
+}
+
+/* ---------------------------------------------------------------------
+   Path finding on a grid (the owner uses it to chase; the cat uses it for
+   click/tap-to-run, so it walks round furniture and through doors)
+   --------------------------------------------------------------------- */
+class NavGrid {
+  constructor(w, radius) {
+    const gw = this.gw = w.gw, gh = this.gh = w.gh;
+    this.W = w.W; this.D = w.D;
+    this.blocked = new Uint8Array(gw * gh); this.dist = new Int16Array(gw * gh); this.queue = new Int32Array(gw * gh);
+    this.gx = 0; this.gz = 0;
+    for (let i = 0; i < gw * gh; i++) if (w.zoneGrid[i] < 0) this.blocked[i] = 1;     // outside every room / corridor
+    for (const s of w.solids) {
+      const ix0 = Math.max(0, Math.floor((s.x0 - radius) / CELL)), ix1 = Math.min(gw - 1, Math.floor((s.x1 + radius) / CELL));
+      const iz0 = Math.max(0, Math.floor((s.z0 - radius) / CELL)), iz1 = Math.min(gh - 1, Math.floor((s.z1 + radius) / CELL));
+      for (let iz = iz0; iz <= iz1; iz++) for (let ix = ix0; ix <= ix1; ix++) {
+        const cx = (ix + 0.5) * CELL, cz = (iz + 0.5) * CELL;
+        const dx = Math.max(s.x0 - cx, 0, cx - s.x1), dz = Math.max(s.z0 - cz, 0, cz - s.z1);
+        if (dx * dx + dz * dz < radius * radius) this.blocked[iz * gw + ix] = 1;
+      }
+    }
+  }
+  reachable(x, z) {                        // every free cell connected to (x, z)
+    const { gw, gh, blocked } = this, seen = new Uint8Array(gw * gh), q = [this.nearestFree(x, z)];
+    seen[q[0]] = 1;
+    for (let h = 0; h < q.length; h++) {
+      const c = q[h], ix = c % gw;
+      for (const n of [ix > 0 ? c - 1 : -1, ix < gw - 1 ? c + 1 : -1, c >= gw ? c - gw : -1, c < gw * (gh - 1) ? c + gw : -1]) if (n >= 0 && !blocked[n] && !seen[n]) { seen[n] = 1; q.push(n); }
+    }
+    return seen;
+  }
+  cellAt(x, z) { return clamp(Math.floor(z / CELL), 0, this.gh - 1) * this.gw + clamp(Math.floor(x / CELL), 0, this.gw - 1); }
+  cellX(i) { return (i % this.gw + 0.5) * CELL; }
+  cellZ(i) { return (((i / this.gw) | 0) + 0.5) * CELL; }
+  blockedAt(x, z) { return x < 0 || x > this.W || z < 0 || z > this.D || this.blocked[this.cellAt(x, z)] === 1; }
+  los(ax, az, bx, bz) {                    // can we walk in a straight line? (blocked cells right at the start are ignored)
+    const dx = bx - ax, dz = bz - az, d = Math.hypot(dx, dz), n = Math.ceil(d / (CELL * 0.5));
+    for (let k = 1; k <= n; k++) { const t = k / n; if (this.blockedAt(ax + dx * t, az + dz * t) && d * t >= 0.6) return false; }
+    return true;
+  }
+  nearestFree(x, z) {
+    const i0 = this.cellAt(x, z);
+    if (!this.blocked[i0]) return i0;
+    const cx = i0 % this.gw, cz = (i0 / this.gw) | 0;
+    for (let r = 1; r < 40; r++) {
+      let best = -1, bd = 1e9;
+      for (let dz = -r; dz <= r; dz++) for (let dx = -r; dx <= r; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue;
+        const ix = cx + dx, iz = cz + dz;
+        if (ix < 0 || iz < 0 || ix >= this.gw || iz >= this.gh) continue;
+        const i = iz * this.gw + ix;
+        if (!this.blocked[i] && dx * dx + dz * dz < bd) { bd = dx * dx + dz * dz; best = i; }
+      }
+      if (best >= 0) return best;
+    }
+    return -1;
+  }
+  setGoal(x, z) {                          // breadth-first search outward from the goal
+    const start = this.nearestFree(x, z);
+    if (start < 0) return false;
+    const { dist, queue, blocked, gw, gh } = this;
+    dist.fill(-1); dist[start] = 0;
+    let qh = 0, qt = 0; queue[qt++] = start;
+    while (qh < qt) {
+      const c = queue[qh++], nd = dist[c] + 1, ix = c % gw;
+      if (ix > 0 && !blocked[c - 1] && dist[c - 1] < 0) { dist[c - 1] = nd; queue[qt++] = c - 1; }
+      if (ix < gw - 1 && !blocked[c + 1] && dist[c + 1] < 0) { dist[c + 1] = nd; queue[qt++] = c + 1; }
+      if (c >= gw && !blocked[c - gw] && dist[c - gw] < 0) { dist[c - gw] = nd; queue[qt++] = c - gw; }
+      if (c < gw * (gh - 1) && !blocked[c + gw] && dist[c + gw] < 0) { dist[c + gw] = nd; queue[qt++] = c + gw; }
+    }
+    if (start === this.cellAt(x, z)) { this.gx = x; this.gz = z; } else { this.gx = this.cellX(start); this.gz = this.cellZ(start); }
+    return true;
+  }
+  waypoint(px, pz) {                       // where should I steer right now to get to the goal? returns [x, z]
+    if (this.los(px, pz, this.gx, this.gz)) return [this.gx, this.gz];
+    const { dist, gw, gh } = this;
+    let cur = this.cellAt(px, pz);
+    if (dist[cur] < 0) {                   // standing in a squeezed cell: hop to the best neighbour
+      let bd = 1e9, bi = -1; const cx = cur % gw, cz = (cur / gw) | 0;
+      for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+        const ix = cx + dx, iz = cz + dz;
+        if (ix < 0 || iz < 0 || ix >= gw || iz >= gh) continue;
+        const i = iz * gw + ix;
+        if (dist[i] >= 0 && dist[i] < bd) { bd = dist[i]; bi = i; }
+      }
+      if (bi < 0) return [this.gx, this.gz];
+      cur = bi;
+    }
+    let best = cur;
+    for (let s = 0; s < 16; s++) {         // walk down the gradient, remember the farthest cell we can see
+      const d = dist[cur];
+      if (d <= 0) { if (this.los(px, pz, this.gx, this.gz)) return [this.gx, this.gz]; break; }
+      const ix = cur % gw; let nxt = -1;
+      if (ix > 0 && dist[cur - 1] === d - 1) nxt = cur - 1;
+      else if (ix < gw - 1 && dist[cur + 1] === d - 1) nxt = cur + 1;
+      else if (cur >= gw && dist[cur - gw] === d - 1) nxt = cur - gw;
+      else if (cur < gw * (gh - 1) && dist[cur + gw] === d - 1) nxt = cur + gw;
+      if (nxt < 0) break;
+      cur = nxt;
+      if (this.los(px, pz, this.cellX(cur), this.cellZ(cur))) best = cur;
+    }
+    return [this.cellX(best), this.cellZ(best)];
+  }
+}
+
+/* ---------------------------------------------------------------------
+   The cat
+   --------------------------------------------------------------------- */
+const cat = { x: 0, z: 0, vx: 0, vz: 0, face: 0, stun: 0, immune: 0, phase: 0, boosting: false, fear: 0, lastRoom: null };
+const catParts = {};
+function buildCat() {
+  const root = new THREE.Group(), pivot = new THREE.Group(); root.add(pivot);
+  const fur = 0xf2993a, stripe = 0xc4641b, belly = 0xfff1de, dark = 0x2a1a14, pink = 0xff9fb0;
+  const body = ball(0.5, fur, 0, 0.58, 0, pivot); body.scale.set(0.62, 0.58, 1.2);
+  for (const z of [-0.32, 0, 0.32]) box(0.24, 0.07, 0.1, stripe, 0, 0.84, z, pivot).castShadow = false;
+  const head = ball(0.34, fur, 0, 0.8, 0.68, pivot); head.scale.set(1.08, 0.92, 0.95);
+  for (const s of [-1, 1]) {
+    const ear = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.26, 4), mat(fur));
+    ear.position.set(s * 0.2, 1.08, 0.62); ear.rotation.z = -s * 0.25; ear.castShadow = true; pivot.add(ear);
+    const inner = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.15, 4), mat(pink));
+    inner.position.set(s * 0.2, 1.06, 0.66); inner.rotation.z = -s * 0.25; pivot.add(inner);
+    ball(0.055, dark, s * 0.14, 0.87, 0.96, pivot); ball(0.018, 0xffffff, s * 0.13, 0.89, 1.0, pivot);
+  }
+  ball(0.05, pink, 0, 0.79, 1.0, pivot);
+  ball(0.2, belly, 0, 0.72, 0.9, pivot).scale.set(1, 0.6, 0.5);
+  catParts.legs = [];
+  for (const [sx, sz] of [[-1, 1], [1, 1], [-1, -1], [1, -1]]) {
+    const leg = new THREE.Group(); leg.position.set(sx * 0.2, 0.4, sz * 0.38); pivot.add(leg);
+    cyl(0.09, 0.08, 0.4, fur, 0, -0.2, 0, leg, 8); ball(0.1, belly, 0, -0.38, 0.03, leg).scale.set(1, 0.6, 1.3);
+    catParts.legs.push(leg);
+  }
+  const tail = new THREE.Group(); tail.position.set(0, 0.7, -0.62); tail.rotation.x = -0.9; pivot.add(tail);
+  cyl(0.065, 0.075, 0.7, fur, 0, 0.35, 0, tail, 8); ball(0.075, stripe, 0, 0.72, 0, tail);
+  catParts.tail = tail;
+  // spiky fur and a puffed-up tail: these only show when the owner is close (see animateCat)
+  const spikeGeo = new THREE.ConeGeometry(0.07, 0.34, 5), spikeMat = mat(0xd9822b);
+  const spike = (parent, x, y, z, rx, rz) => { const s = new THREE.Mesh(spikeGeo, spikeMat); s.position.set(x, y + 0.14, z); s.rotation.set(rx, 0, rz); parent.add(s); return s; };
+  const spikes = new THREE.Group(); pivot.add(spikes);
+  for (let i = 0; i < 6; i++) spike(spikes, 0, 0.84, -0.48 + i * 0.19, -0.25, 0);                              // along the spine
+  for (const sd of [-1, 1]) for (const z of [-0.3, 0.1, 0.45]) spike(spikes, sd * 0.27, 0.72, z, 0, -sd * 0.95);   // along the sides
+  for (const sd of [-1, 1]) spike(spikes, sd * 0.28, 0.95, 0.9, 0, -sd * 0.9);                                  // cheeks
+  spike(spikes, 0, 1.05, 0.78, 0.5, 0);                                                                           // forehead
+  const tailSpikes = new THREE.Group(); tail.add(tailSpikes);
+  for (const y of [0.15, 0.3, 0.45, 0.6]) for (const a of [0, 2.1, 4.2]) spike(tailSpikes, Math.cos(a) * 0.09, y, Math.sin(a) * 0.09, Math.sin(a), -Math.cos(a));
+  spikes.scale.setScalar(0.001); tailSpikes.scale.setScalar(0.001); spikes.visible = tailSpikes.visible = false;
+  catParts.spikes = spikes; catParts.tailSpikes = tailSpikes;
+  const stars = new THREE.Group(); stars.position.y = 1.65; stars.visible = false; root.add(stars);
+  for (let i = 0; i < 3; i++) {
+    const star = new THREE.Mesh(new THREE.OctahedronGeometry(0.17), new THREE.MeshBasicMaterial({ color: 0xffe14d }));
+    const a = i / 3 * Math.PI * 2; star.position.set(Math.cos(a) * 0.5, 0, Math.sin(a) * 0.5); stars.add(star);
+  }
+  catParts.stars = stars; catParts.pivot = pivot;
+  scene.add(root);
+  return root;
+}
+const catMesh = buildCat();
+catMesh.scale.setScalar(1.3);          // drawn a bit bigger than its collision circle so it's easy to follow
+
+/* ---------------------------------------------------------------------
+   The owner
+   --------------------------------------------------------------------- */
+const owner = { x: 0, z: 0, vx: 0, vz: 0, face: Math.PI, wake: OWNER_HEAD_START, plan: 0, phase: 0, stun: 0, immune: 0 };
+const ownerParts = {};
+function buildOwner() {
+  const root = new THREE.Group(), pivot = new THREE.Group(); root.add(pivot); root.scale.setScalar(0.92);
+  const skin = 0xf0c29a, robe = 0x7e57c2, pants = 0x37474f, hair = 0x5d4037;
+  ownerParts.legs = [];
+  for (const s of [-1, 1]) {
+    const leg = new THREE.Group(); leg.position.set(s * 0.3, 1.3, 0); pivot.add(leg);
+    cyl(0.2, 0.2, 1.3, pants, 0, -0.65, 0, leg, 10); box(0.42, 0.22, 0.7, 0xe57373, 0, -1.2, 0.14, leg);
+    ownerParts.legs.push(leg);
+  }
+  cyl(0.55, 0.7, 1.5, robe, 0, 2.05, 0, pivot, 16); cyl(0.62, 0.62, 0.14, 0x4527a0, 0, 1.85, 0, pivot, 16);
+  ball(0.48, skin, 0, 3.3, 0, pivot);
+  const cap = new THREE.Mesh(new THREE.SphereGeometry(0.51, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.55), mat(hair));
+  cap.position.set(0, 3.33, -0.05); cap.castShadow = true; pivot.add(cap);
+  for (const s of [-1, 1]) {
+    ball(0.06, 0x111111, s * 0.17, 3.33, 0.43, pivot);
+    const brow = box(0.22, 0.05, 0.05, 0x3e2a20, s * 0.17, 3.48, 0.45, pivot); brow.rotation.z = s * 0.4; brow.castShadow = false;
+  }
+  box(0.22, 0.045, 0.05, 0x7a2f2f, 0, 3.12, 0.46, pivot).castShadow = false;
+  ownerParts.arms = [];
+  for (const s of [-1, 1]) {
+    const arm = new THREE.Group(); arm.position.set(s * 0.78, 2.65, 0); arm.rotation.x = -1.1; pivot.add(arm);
+    cyl(0.16, 0.14, 1.1, robe, 0, -0.55, 0, arm, 10); ball(0.17, skin, 0, -1.15, 0, arm);
+    ownerParts.arms.push(arm);
+  }
+  const stars = new THREE.Group(); stars.position.y = 4.4; stars.visible = false; root.add(stars);
+  for (let i = 0; i < 3; i++) {
+    const star = new THREE.Mesh(new THREE.OctahedronGeometry(0.22), new THREE.MeshBasicMaterial({ color: 0xffe14d }));
+    const a = i / 3 * Math.PI * 2; star.position.set(Math.cos(a) * 0.7, 0, Math.sin(a) * 0.7); stars.add(star);
+  }
+  ownerParts.stars = stars; ownerParts.pivot = pivot;
+  scene.add(root);
+  return root;
+}
+const ownerMesh = buildOwner();
+
+/* ---------------------------------------------------------------------
+   Breakable things and the broken bits they leave behind
+   --------------------------------------------------------------------- */
+const items = [], debris = [], shards = [], respawns = [];
+const ITEM_SETS = {
+  house: [
+    { r: 0.55, colors: [0x3aa6c9, 0xd9534f, 0x8e5bd6, 0x2fb26c], spill: 0x9fd8ee,                       // vase
+      build(g, c) { cyl(0.3, 0.38, 0.9, c, 0, 0.45, 0, g); cyl(0.16, 0.28, 0.4, c, 0, 1.1, 0, g); cyl(0.2, 0.17, 0.1, c, 0, 1.35, 0, g); cyl(0.39, 0.39, 0.12, 0xffffff, 0, 0.5, 0, g); } },
+    { r: 0.6, colors: [0xc8683c], spill: 0x6b4a2f,                                                       // potted plant
+      build(g, c) { cyl(0.38, 0.26, 0.55, c, 0, 0.28, 0, g); cyl(0.4, 0.4, 0.1, 0xa8522b, 0, 0.58, 0, g); for (const [x, y, z, s] of [[0, 0.95, 0, 0.36], [0.22, 0.75, 0.1, 0.25], [-0.2, 0.8, -0.1, 0.27]]) ball(s, 0x3fa34d, x, y, z, g); } },
+    { r: 0.55, colors: [0xf5d76e, 0xff9ecb, 0x9be3c6], spill: 0xfff1b8,                                // lamp
+      build(g, c) { cyl(0.3, 0.32, 0.1, 0x555555, 0, 0.05, 0, g); cyl(0.04, 0.04, 1.1, 0x666666, 0, 0.6, 0, g); const s = cyl(0.2, 0.42, 0.55, c, 0, 1.3, 0, g, 16); s.material = new THREE.MeshLambertMaterial({ color: c, emissive: c, emissiveIntensity: 0.35 }); } },
+    { r: 0.5, colors: [0xe0453a, 0x3a7bd5, 0xf2f2f2], spill: 0x7a4a2a,                                  // mug
+      build(g, c) { cyl(0.22, 0.2, 0.4, c, 0, 0.2, 0, g); cyl(0.17, 0.17, 0.02, 0x5a3a22, 0, 0.4, 0, g); const h = new THREE.Mesh(new THREE.TorusGeometry(0.12, 0.04, 8, 12), mat(c)); h.position.set(0.24, 0.2, 0); h.castShadow = true; g.add(h); } },
+    { r: 0.55, colors: [0x9fd8ff], spill: 0x8fd3ff,                                                      // fish bowl
+      build(g, c) { cyl(0.28, 0.32, 0.25, 0x8b6b4a, 0, 0.12, 0, g); const bowl = ball(0.44, c, 0, 0.7, 0, g); bowl.material = new THREE.MeshLambertMaterial({ color: c, transparent: true, opacity: 0.55 }); const fish = ball(0.1, 0xff7a1a, 0.05, 0.7, 0, g); fish.scale.set(1.5, 0.9, 0.7); } },
+  ],
+  park: [
+    { r: 0.6, colors: [0xc8683c], spill: 0x6b4a2f,                                                       // flower pot
+      build(g, c) { cyl(0.38, 0.26, 0.55, c, 0, 0.28, 0, g); cyl(0.4, 0.4, 0.1, 0xa8522b, 0, 0.58, 0, g); for (const [x, z, f] of [[0, 0, 0xff7aa8], [0.2, 0.1, 0xffd84d], [-0.2, -0.1, 0xffffff]]) { cyl(0.03, 0.03, 0.4, 0x3fa34d, x, 0.8, z, g, 5); ball(0.15, f, x, 1.05, z, g); } } },
+    { r: 0.55, colors: [0x3a6fb5, 0xb5473f], spill: 0xd8d4c8,                                            // garden gnome
+      build(g, c) { cyl(0.28, 0.36, 0.7, c, 0, 0.35, 0, g, 12); ball(0.22, 0xf0c29a, 0, 0.85, 0, g); const b = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.5, 8), mat(0xffffff)); b.position.set(0, 0.62, -0.12); b.rotation.x = Math.PI; g.add(b); const h = new THREE.Mesh(new THREE.ConeGeometry(0.24, 0.62, 10), mat(0xd9534f)); h.position.y = 1.3; h.castShadow = true; g.add(h); } },
+    { r: 0.5, colors: [0xfff3b0, 0xbfe9ff], spill: 0xfff1b8,                                             // glass lantern
+      build(g, c) { cyl(0.28, 0.3, 0.1, 0x333333, 0, 0.05, 0, g); const l = cyl(0.24, 0.24, 0.75, c, 0, 0.5, 0, g, 12); l.material = new THREE.MeshLambertMaterial({ color: c, emissive: c, emissiveIntensity: 0.45, transparent: true, opacity: 0.85 }); const t = new THREE.Mesh(new THREE.ConeGeometry(0.3, 0.25, 12), mat(0x333333)); t.position.y = 1.0; g.add(t); } },
+    { r: 0.45, colors: [0x2fa84f, 0x3a7bd5], spill: 0x6fcf8f,                                            // bottle
+      build(g, c) { cyl(0.2, 0.2, 0.8, c, 0, 0.4, 0, g, 12); cyl(0.08, 0.14, 0.4, c, 0, 1.0, 0, g, 10); cyl(0.09, 0.09, 0.08, 0xdddddd, 0, 1.24, 0, g, 8); } },
+    { r: 0.6, colors: [0xcfc8b8], spill: 0x8fd3ff,                                                       // bird bath
+      build(g, c) { cyl(0.15, 0.26, 0.8, c, 0, 0.4, 0, g, 10); cyl(0.55, 0.3, 0.2, c, 0, 0.9, 0, g, 16); cyl(0.47, 0.47, 0.04, 0x59b4e8, 0, 1.01, 0, g, 16).castShadow = false; } },
+  ],
+};
+
+/* Every breakable thing wears a yellow glow (a halo and a pulsing ring on the floor) so you can tell what is breakable. */
+const glowTex = canvasTexture(128, (g, s) => {
+  const gr = g.createRadialGradient(s / 2, s / 2, 4, s / 2, s / 2, s / 2);
+  gr.addColorStop(0, 'rgba(255,215,40,0.25)'); gr.addColorStop(0.45, 'rgba(255,205,30,0.6)'); gr.addColorStop(1, 'rgba(255,200,30,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, s, s);
+});
+const glowRingGeo = new THREE.RingGeometry(0.62, 0.82, 32), glowDiscGeo = new THREE.CircleGeometry(0.62, 32);
+function makeGlow() {
+  const group = new THREE.Group();
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, transparent: true, depthWrite: false, opacity: 0.85 }));
+  sprite.scale.set(2.4, 2.4, 1); sprite.position.y = 0.7;
+  const ring = new THREE.Mesh(glowRingGeo, new THREE.MeshBasicMaterial({ color: 0xffe14d, transparent: true, depthWrite: false, opacity: 0.9 }));
+  ring.rotation.x = -Math.PI / 2; ring.position.y = 0.04;
+  const disc = new THREE.Mesh(glowDiscGeo, new THREE.MeshBasicMaterial({ color: 0xffe14d, transparent: true, depthWrite: false, opacity: 0.3 }));
+  disc.rotation.x = -Math.PI / 2; disc.position.y = 0.035;
+  group.add(disc, ring, sprite);
+  return { group, sprite, ring, disc };
+}
+
+function spawnItem(zone) {
+  const types = ITEM_SETS[world.def.itemSet];
+  for (let tries = 0; tries < 250; tries++) {
+    const x = rand(zone.x0 + 1.4, zone.x1 - 1.4), z = rand(zone.z0 + 1.4, zone.z1 - 1.4);
+    if (!clearOfSolids(solids, x, z, 1.3) || !world.catReach[world.catNav.cellAt(x, z)]) continue;   // only where the cat can really get to
+    if (Math.hypot(x - cat.x, z - cat.z) < 5 || Math.hypot(x - owner.x, z - owner.z) < 4) continue;
+    if (items.some(it => Math.hypot(it.x - x, it.z - z) < 2.6)) continue;
+    if (debris.some(d => Math.hypot(d.x - x, d.z - z) < 1.8)) continue;
+    const type = pick(types), color = pick(type.colors);
+    const mesh = new THREE.Group(); mesh.position.set(x, 0, z); mesh.rotation.y = rand(0, 6.28);
+    type.build(mesh, color);
+    mesh.traverse(o => { if (o.isMesh) o.castShadow = true; });
+    mesh.scale.setScalar(0.01);
+    const glow = makeGlow(); mesh.add(glow.group);
+    zone.itemGroup.add(mesh); zone.count++;
+    items.push({ x, z, r: type.r, type, color, mesh, age: 0, zone, glow, phase: rand(0, 6.28) });
+    return true;
+  }
+  return false;
+}
+
+const shardGeo = new THREE.TetrahedronGeometry(1);
+const puddleGeo = new THREE.CircleGeometry(1, 20);
+function makeDebris(item) {
+  const g = new THREE.Group(); g.position.set(item.x, 0, item.z); item.zone.debrisGroup.add(g);
+  const puddle = new THREE.Mesh(puddleGeo, new THREE.MeshLambertMaterial({ color: item.type.spill, transparent: true, opacity: 0.8 }));
+  puddle.rotation.x = -Math.PI / 2; puddle.position.y = 0.02 + Math.random() * 0.012;
+  puddle.scale.set(rand(0.7, 0.9), rand(0.7, 0.9), 1); puddle.rotation.z = rand(0, 6.28); puddle.receiveShadow = true;
+  const rim = new THREE.Mesh(puddleGeo, new THREE.MeshBasicMaterial({ color: 0x1a1030, transparent: true, opacity: 0.2 }));   // soft dark outline so it shows on any floor
+  rim.rotation.x = -Math.PI / 2; rim.rotation.z = puddle.rotation.z; rim.position.y = 0.012;
+  rim.scale.set(puddle.scale.x * 1.15, puddle.scale.y * 1.15, 1);
+  g.add(rim, puddle);
+  const deb = { x: item.x, z: item.z, armed: false, ownerOn: false, age: 0, g, dead: false };
+  debris.push(deb);
+  for (let i = 0; i < 8; i++) {
+    const size = rand(0.07, 0.17);
+    const m = new THREE.Mesh(shardGeo, mat(i % 3 === 0 ? 0xffffff : item.color));
+    m.scale.setScalar(size); m.position.set(0, rand(0.4, 0.8), 0); m.castShadow = true; g.add(m);
+    const a = rand(0, 6.28), sp = rand(0.8, 2.2);
+    shards.push({ m, vx: Math.cos(a) * sp, vy: rand(2, 4.5), vz: Math.sin(a) * sp, size, sx: rand(-8, 8), sz: rand(-8, 8), landed: false, d: deb });
+  }
+}
+function updateShards(dt) {
+  for (const s of shards) {
+    if (s.landed) continue;
+    s.vy -= 18 * dt;
+    s.m.position.x += s.vx * dt; s.m.position.y += s.vy * dt; s.m.position.z += s.vz * dt;
+    s.m.rotation.x += s.sx * dt; s.m.rotation.z += s.sz * dt;
+    if (s.m.position.y <= s.size * 0.5 && s.vy < 0) { s.m.position.y = s.size * 0.5; s.landed = true; }
+  }
+  if (shards.length > 800) shards.splice(0, shards.length - 800);
+}
+function breakItem(idx) {
+  const it = items[idx];
+  items.splice(idx, 1);
+  it.zone.itemGroup.remove(it.mesh); it.zone.count--;
+  makeDebris(it);
+  score += POINTS; bumpScore();
+  if (mode !== 'break') respawns.push({ t: 3 + Math.random() * 1.5, zone: it.zone });   // a replacement turns up in the same room a few seconds later (not in Break everything)
+}
+function resetRoundObjects() {
+  items.length = 0; debris.length = 0; shards.length = 0; respawns.length = 0;
+  for (const z of world.rooms) { z.itemGroup.clear(); z.debrisGroup.clear(); z.count = 0; }
+  for (const z of world.rooms) for (let i = 0; i < world.def.itemsPerRoom; i++) spawnItem(z);
+}
+
+/* ---------------------------------------------------------------------
+   Worlds and the camera.  The camera shows one room at a time; when the cat
+   walks into a corridor it glides to the room the corridor leads to.
+   --------------------------------------------------------------------- */
+const worlds = {};
+let world = null, catNav = null, ownerNav = null, currentMap = 'house';
+const ELEV = 58 * Math.PI / 180;
+const camDir = new THREE.Vector3(0, Math.sin(ELEV), Math.cos(ELEV));
+const camTarget = new THREE.Vector3(), cam = { room: null, dwell: 0, dist: 40 };
+const tmpV = new THREE.Vector3();
+
+function applyCamera() {
+  camera.position.copy(camTarget).addScaledVector(camDir, cam.dist);
+  camera.lookAt(camTarget); camera.updateMatrixWorld();
+  sun.position.copy(camTarget).add(sunOffset); sun.target.position.copy(camTarget);
+}
+function computeFits(w) {                // for every room: where to put the camera so the whole room fits the screen
+  const house = w.def.style === 'house', m = house ? WALL_T + 0.3 : 0.9, hgt = house ? 3.9 : 4.6;
+  for (const z of w.rooms) {
+    const target = new THREE.Vector3((z.x0 + z.x1) / 2, 0.6, (z.z0 + z.z1) / 2 + 0.4), pts = [];
+    for (const x of [z.x0 - m, z.x1 + m]) for (const y of [0, hgt]) for (const zz of [z.z0 - m, z.z1 + m]) pts.push(new THREE.Vector3(x, y, zz));
+    const fits = d => {
+      camera.position.copy(target).addScaledVector(camDir, d); camera.lookAt(target); camera.updateMatrixWorld();
+      return pts.every(p => { tmpV.copy(p).project(camera); return Math.abs(tmpV.x) <= 0.97 && tmpV.y <= 0.86 && tmpV.y >= -0.93; });
+    };
+    let lo = 8, hi = 220;
+    for (let i = 0; i < 24; i++) { const mid = (lo + hi) / 2; if (fits(mid)) hi = mid; else lo = mid; }
+    w.fits[z.id] = { target, dist: hi };
+  }
+}
+function camSnap(room) {
+  cam.room = room; cam.dwell = 0;
+  const f = world.fits[room.id]; camTarget.copy(f.target); cam.dist = f.dist; applyCamera();
+}
+/* Cat cam: the camera follows the cat all the time. The whole map stays loaded, and everything fades out smoothly with distance from the
+   cat (see the distance fade near the top). hw and hd are half the width and depth of the area that is visible at all (it is completely dark
+   at that edge), soft is how wide the fade is, so everything is fully clear inside hw - soft and hd - soft. fw and fd are the part that
+   the camera frames on screen. All of these are in WORLD units, so zooming the web page or resizing the window can't reveal more. */
+const CAT_CAM = { hw: 16, hd: 11.5, soft: 5, fw: 14, fd: 9.5, cx: 0, cz: 0, dist: 40 };
+function updateFade() {                  // point the fade at the cat, or switch it off (a huge rectangle)
+  if (catCamOn && state !== 'menu') { FADE.rect.value.set(CAT_CAM.cx, CAT_CAM.cz, CAT_CAM.hw, CAT_CAM.hd); FADE.soft.value = CAT_CAM.soft; }
+  else { FADE.rect.value.set(0, 0, 1e5, 1e5); FADE.soft.value = 1; }
+}
+function computeCatCamFit() {            // how far back must the camera be for the framed area (and the tallest things in it) to fit on screen?
+  const hgt = world.def.style === 'house' ? 3.9 : 4.6, target = new THREE.Vector3(0, 0.6, 0.4), pts = [];
+  for (const x of [-CAT_CAM.fw, CAT_CAM.fw]) for (const y of [0, hgt]) for (const z of [-CAT_CAM.fd, CAT_CAM.fd]) pts.push(new THREE.Vector3(x, y, z));
+  const fits = d => {
+    camera.position.copy(target).addScaledVector(camDir, d); camera.lookAt(target); camera.updateMatrixWorld();
+    return pts.every(p => { tmpV.copy(p).project(camera); return Math.abs(tmpV.x) <= 0.97 && tmpV.y <= 0.86 && tmpV.y >= -0.93; });
+  };
+  let lo = 8, hi = 220;
+  for (let i = 0; i < 24; i++) { const mid = (lo + hi) / 2; if (fits(mid)) hi = mid; else lo = mid; }
+  CAT_CAM.dist = hi;
+}
+function snapCatCam() {
+  CAT_CAM.cx = cat.x; CAT_CAM.cz = cat.z;
+  camTarget.set(cat.x, 0.6, cat.z + 0.4); cam.dist = CAT_CAM.dist; applyCamera(); updateFade();
+}
+function zoneAtXZ(x, z) {
+  const ix = Math.floor(x / CELL), iz = Math.floor(z / CELL);
+  if (ix < 0 || iz < 0 || ix >= world.gw || iz >= world.gh) return null;
+  const id = world.zoneGrid[iz * world.gw + ix];
+  return id < 0 ? null : world.zones[id];
+}
+function trackCameraRoom(dt) {           // which room should the camera show?
+  cam.dwell -= dt;
+  const z = zoneAtXZ(cat.x, cat.z);
+  if (!z) return;
+  let target;
+  if (z.kind === 'room') { cat.lastRoom = z; target = z; }
+  else target = cat.lastRoom === z.a ? z.b : cat.lastRoom === z.b ? z.a : z.a;      // in a corridor: show the room we're heading to
+  if (target !== cam.room && cam.dwell <= 0) { cam.room = target; cam.dwell = 0.45; }
+}
+function updateCamera(dt) {
+  if (catCamOn) {                                          // cat cam: stay on the cat (with a little smoothing)
+    const k = 1 - Math.exp(-14 * dt);
+    CAT_CAM.cx += (cat.x - CAT_CAM.cx) * k; CAT_CAM.cz += (cat.z - CAT_CAM.cz) * k;
+    camTarget.set(CAT_CAM.cx, 0.6, CAT_CAM.cz + 0.4); cam.dist = CAT_CAM.dist;
+  } else {                                                 // normal: show the room the cat is in
+    const f = world.fits[cam.room.id], k = 1 - Math.exp(-9 * dt);
+    camTarget.lerp(f.target, k); cam.dist += (f.dist - cam.dist) * k;
+  }
+  applyCamera();
+  if (world.water) world.water.offset.x += dt * 0.015;
+}
+function resize() {
+  const w = window.innerWidth, h = window.innerHeight;
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));      // (changes when the page is zoomed)
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h; camera.updateProjectionMatrix();
+  menuCam.aspect = w / h; menuCam.updateProjectionMatrix();
+  if (world) {
+    computeFits(world);
+    if (catCamOn && state !== 'menu') { computeCatCamFit(); snapCatCam(); } else camSnap(cam.room || world.rooms[0]);
+  }
+}
+window.addEventListener('resize', resize);
+
+function useWorld(key) {
+  if (world) scene.remove(world.group);
+  world = worlds[key] || (worlds[key] = buildWorld(key));
+  currentMap = key; solids = world.solids; catNav = world.catNav; ownerNav = world.ownerNav;
+  scene.add(world.group);
+  scene.background.setHex(world.def.bg);
+  for (const z of world.rooms) z.group.visible = true;
+  for (const l of world.links) l.group.visible = true;
+  computeFits(world);
+  placeEntities();
+  resetRoundObjects();
+  camSnap(world.catStart.room);
+}
+function placeEntities() {
+  const cs = world.catStart, os = world.ownerStart;
+  Object.assign(cat, { x: cs.x, z: cs.z, vx: 0, vz: 0, face: 0, stun: 0, immune: 0, phase: 0, boosting: false, fear: 0, lastRoom: cs.room });
+  Object.assign(owner, { x: os.x, z: os.z, vx: 0, vz: 0, face: Math.PI, wake: OWNER_HEAD_START, plan: 0, stun: 0, immune: 0 });
+}
+
+/* ---------------------------------------------------------------------
+   Game state
+   --------------------------------------------------------------------- */
+let state = 'menu';             // menu | playing | won | lost
+let mode = 'classic';           // the mode being played: classic | break | endless
+let selectedMap = 'house', selectedMode = 'classic', selectedCam = false, catCamOn = false;   // what the main menu has highlighted
+let score = 0, timeLeft = ROUND_TIME, elapsed = 0, endedAt = 0;
+
+const MODES = {
+  classic: { hud: 'TIME LEFT', desc: "One minute. Break as much as you can and don't get caught until the clock runs out." },
+  break:   { hud: 'THINGS LEFT', desc: 'No timer. Break every single thing in the map before the owner catches you.' },
+  endless: { hud: 'SURVIVED', desc: 'No timer and no end. Keep breaking things for as long as you can. It is over when you get caught.' },
+};
+const fmtTime = s => Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
+
+function startRound() {
+  mode = selectedMode;
+  score = 0; timeLeft = ROUND_TIME; elapsed = 0;
+  for (const s of trail) s.life = 0;
+  placeEntities();
+  resetInput(); follow.goalCell = -1; follow.sx = follow.sz = 0;           // the cat waits for the first key press or mouse move
+  resetRoundObjects();
+  state = 'playing';
+  catCamOn = selectedCam;
+  scene.background.setHex(catCamOn ? 0x050407 : world.def.bg);                // (in cat cam everything outside the visible rectangle is black)
+  if (catCamOn) { computeCatCamFit(); snapCatCam(); } else { camSnap(world.catStart.room); updateFade(); }
+  document.body.classList.remove('inMenu'); document.body.classList.add('playing'); $('hud').classList.remove('hidden'); $('overlay').classList.add('hidden');
+  $('timeLabel').textContent = MODES[mode].hud;
+  updateHud(true);
+}
+function endRound(result) {
+  state = result; endedAt = performance.now();
+  resetInput(); document.body.classList.remove('playing');
+  let title, text;
+  if (result === 'lost') {
+    title = 'Caught!'; text = 'The owner got you. Score: ' + score;
+    if (mode === 'break') text += ' · ' + items.length + ' things left';
+    if (mode === 'endless') text += ' · You lasted ' + fmtTime(elapsed);
+  } else if (mode === 'break') { title = 'You broke everything!'; text = 'Every last thing is smashed. Score: ' + score + ' · Time: ' + fmtTime(elapsed); }
+  else { title = 'You got away!'; text = 'A whole minute without getting caught. Score: ' + score; }
+  $('ovTitle').textContent = title; $('ovText').textContent = text;
+  $('overlay').classList.remove('hidden');
+}
+function canStart() { return (state === 'won' || state === 'lost') && performance.now() - endedAt >= 700; }   // don't restart by accident
+function tryStart() { if (canStart()) startRound(); }
+
+/* Main menu */
+function refreshMenuUi() {
+  $('selMap').value = selectedMap; $('selMode').value = selectedMode;
+  $('camBtn').setAttribute('aria-checked', selectedCam ? 'true' : 'false'); $('camBtnText').textContent = selectedCam ? 'On' : 'Off';
+  $('modeDesc').textContent = MODES[selectedMode].desc + (selectedCam ? ' Cat cam is on: the camera follows the cat, and the map fades into darkness away from it.' : '');
+}
+function playSelected() {
+  if (state !== 'menu') return;
+  useWorld(selectedMap);
+  if (menuSet) menuSet.group.visible = false;
+  startRound();
+}
+function showMenu() {
+  state = 'menu'; catCamOn = false;
+  for (const k in keys) keys[k] = false;
+  resetInput(); document.body.classList.remove('playing');
+  document.body.classList.add('inMenu'); $('hud').classList.add('hidden'); $('overlay').classList.add('hidden');
+  useWorld('house');                     // the menu's chase plays in the house's living room
+  refreshMenuUi();
+  enterMenuScene(); updateFade();
+}
+for (const [id, apply] of [['selMap', v => { selectedMap = v; }], ['selMode', v => { selectedMode = v; }]]) {
+  $(id).addEventListener('change', e => { apply(e.target.value); refreshMenuUi(); e.target.blur(); });   // (blur so Enter / Space start the game again)
+}
+$('camBtn').addEventListener('click', e => { selectedCam = !selectedCam; refreshMenuUi(); e.currentTarget.blur(); });   // Cat cam is an on/off button
+$('playBtn').addEventListener('click', playSelected);
+$('againBtn').addEventListener('click', tryStart);
+$('toMenuBtn').addEventListener('click', () => { if (state === 'won' || state === 'lost') showMenu(); });
+$('menuBtn').addEventListener('click', () => { if (state === 'playing') showMenu(); });
+
+/* HUD */
+let lastShownScore = -1, lastShownVal = '';
+function bumpScore() { const el = $('scoreStat'); el.classList.remove('bump'); void el.offsetWidth; el.classList.add('bump'); }
+function updateHud(force) {
+  if (state === 'menu') return;
+  if (force || score !== lastShownScore) { $('score').textContent = score; lastShownScore = score; }
+  const v = mode === 'classic' ? Math.ceil(timeLeft) : mode === 'break' ? items.length : fmtTime(elapsed);   // time left / things left / time survived
+  if (force || v !== lastShownVal) { $('time').textContent = v; lastShownVal = v; $('timeStat').classList.toggle('low', mode === 'classic' && v <= 10 && state === 'playing'); }
+}
+
+/* ---------------------------------------------------------------------
+   Input. Both ways of playing are always available (there is nothing to switch):
+   - WASD or the arrow keys run the cat; hold Space to sprint.
+   - Use only the mouse and the cat follows the cursor (which turns into a red
+     dot); hold the left mouse button to sprint.
+   - Touch: the cat follows your finger; put a second finger down to sprint.
+   --------------------------------------------------------------------- */
+const keys = { ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false, KeyW: false, KeyA: false, KeyS: false, KeyD: false, Space: false };
+const input = { src: 'none', cx: 0, cy: 0, inside: false, left: false, touches: new Set() };   // src: which control was used last (none | keys | mouse)
+const anyMoveKey = () => keys.ArrowUp || keys.ArrowDown || keys.ArrowLeft || keys.ArrowRight || keys.KeyW || keys.KeyA || keys.KeyS || keys.KeyD;
+const sprinting = () => keys.Space || (!anyMoveKey() && (input.left || input.touches.size >= 2));   // Space always sprints; the left button only when no movement key is held
+function setSrc(s) { if (input.src !== s) { input.src = s; document.body.classList.toggle('mouseCtl', s === 'mouse'); } }
+function resetInput() { for (const k in keys) keys[k] = false; input.left = false; input.inside = false; input.touches.clear(); setSrc('none'); }
+
+const MENU_KEYS = { Digit1: ['map', 'house'], Digit2: ['map', 'park'], Digit3: ['mode', 'classic'], Digit4: ['mode', 'break'], Digit5: ['mode', 'endless'], KeyC: ['cam'] };
+window.addEventListener('keydown', e => {
+  if (state === 'menu') {                                      // main menu: 1-2 pick the map, 3-5 the mode, C toggles the cat cam, Enter/Space plays
+    const choice = MENU_KEYS[e.code];
+    if (e.target && e.target.tagName === 'SELECT' && (e.code === 'Enter' || e.code === 'Space')) return;   // (a dropdown has the focus: let it open)
+    if (choice) { e.preventDefault(); if (choice[0] === 'map') selectedMap = choice[1]; else if (choice[0] === 'mode') selectedMode = choice[1]; else selectedCam = !selectedCam; refreshMenuUi(); }
+    else if (e.code === 'Enter' || e.code === 'Space') { e.preventDefault(); if (!e.repeat) playSelected(); }
+    else if (e.code in keys) e.preventDefault();
+    return;
+  }
+  if (e.code === 'Escape' || (e.code === 'KeyM' && state !== 'playing')) { e.preventDefault(); showMenu(); return; }
+  if (!(e.code in keys) && e.code !== 'Enter') return;
+  e.preventDefault();
+  if (e.code in keys) { keys[e.code] = true; if (e.code !== 'Space') setSrc('keys'); }
+  if (state !== 'playing' && !e.repeat) tryStart();
+});
+window.addEventListener('keyup', e => { if (e.code in keys) { keys[e.code] = false; e.preventDefault(); } });
+window.addEventListener('blur', resetInput);
+
+const raycaster = new THREE.Raycaster(), ndc = new THREE.Vector2(), floorPlaneY0 = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hit = new THREE.Vector3();
+function mouseFloorPoint() {             // where on the floor is the cursor pointing? (worked out every frame, because the camera moves between rooms)
+  const rect = canvas.getBoundingClientRect();
+  ndc.set(((input.cx - rect.left) / rect.width) * 2 - 1, -((input.cy - rect.top) / rect.height) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  if (!raycaster.ray.intersectPlane(floorPlaneY0, hit)) return null;
+  return { x: clamp(hit.x, 0.7, world.W - 0.7), z: clamp(hit.z, 0.7, world.D - 0.7) };
+}
+canvas.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  if (state === 'menu') return;
+  if (state !== 'playing') { tryStart(); return; }
+  try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+  input.cx = e.clientX; input.cy = e.clientY; input.inside = true;
+  if (e.pointerType === 'touch') input.touches.add(e.pointerId); else if (e.button === 0) input.left = true;
+  if (!anyMoveKey()) setSrc('mouse');
+});
+canvas.addEventListener('pointermove', e => {
+  if (e.pointerType === 'touch' && !input.touches.has(e.pointerId)) return;
+  input.cx = e.clientX; input.cy = e.clientY; input.inside = true;
+  if (state === 'playing' && !anyMoveKey()) setSrc('mouse');                     // moving the mouse hands the steering back to it
+});
+const pointerUp = e => {
+  if (e.pointerType === 'touch') { input.touches.delete(e.pointerId); if (!input.touches.size) input.inside = false; }
+  else if (e.button === 0) input.left = false;
+};
+canvas.addEventListener('pointerup', pointerUp);
+canvas.addEventListener('pointercancel', pointerUp);
+canvas.addEventListener('pointerleave', e => { if (e.pointerType !== 'touch') input.inside = false; });   // the mouse left the window: stop following
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+/* ---------------------------------------------------------------------
+   Cat update
+   --------------------------------------------------------------------- */
+function approachVelocity(o, tvx, tvz, accel, dt) {
+  const ax = tvx - o.vx, az = tvz - o.vz, m = Math.hypot(ax, az), step = accel * dt;
+  if (m <= step) { o.vx = tvx; o.vz = tvz; } else { o.vx += ax / m * step; o.vz += az / m * step; }
+}
+function turnToward(current, target, rate, dt) {
+  let d = target - current;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  return current + clamp(d, -rate * dt, rate * dt);
+}
+/* Which way does the player want the cat to go? Returns [dx, dz, strength]. */
+const follow = { goalCell: -1, cool: 0, sx: 0, sz: 0 };      // state for following the cursor
+function catWantedDirection(dt) {
+  const kx = ((keys.ArrowRight || keys.KeyD) ? 1 : 0) - ((keys.ArrowLeft || keys.KeyA) ? 1 : 0);
+  const kz = ((keys.ArrowDown || keys.KeyS) ? 1 : 0) - ((keys.ArrowUp || keys.KeyW) ? 1 : 0);
+  if (kx || kz) { follow.sx = follow.sz = 0; const m = Math.hypot(kx, kz); return [kx / m, kz / m, 1]; }     // keyboard steering
+  if (input.src === 'mouse' && input.inside) { const target = mouseFloorPoint(); if (target) return followPoint(target, dt); }
+  follow.sx = follow.sz = 0;
+  return [0, 0, 0];
+}
+/* Following the cursor: plan a route round furniture to the point under the cursor, steer along it smoothly, and slow down as we get close. */
+function followPoint(target, dt) {
+  follow.cool -= dt;
+  const cell = catNav.cellAt(target.x, target.z);
+  if (cell !== follow.goalCell && follow.cool <= 0) { catNav.setGoal(target.x, target.z); follow.goalCell = cell; follow.cool = 0.06; }   // re-plan when the cursor reaches a new spot (at most ~15 times a second)
+  else if (cell === follow.goalCell && !catNav.blocked[cell]) { catNav.gx = target.x; catNav.gz = target.z; }                           // same spot: just aim exactly at the cursor
+  const d = catNav.dist[catNav.cellAt(cat.x, cat.z)];
+  const left = d >= 0 ? d * CELL : Math.hypot(target.x - cat.x, target.z - cat.z);                                                       // how far is it to walk?
+  if (left < 0.3) { follow.sx = follow.sz = 0; return [0, 0, 0]; }
+  const [wx, wz] = catNav.waypoint(cat.x, cat.z);
+  let ex = wx - cat.x, ez = wz - cat.z; const m = Math.hypot(ex, ez);
+  if (m < 0.05) { follow.sx = follow.sz = 0; return [0, 0, 0]; }
+  ex /= m; ez /= m;
+  const a = 1 - Math.exp(-14 * dt);                                                                                                         // ease the heading so corners don't make the cat jitter
+  follow.sx += (ex - follow.sx) * a; follow.sz += (ez - follow.sz) * a;
+  const l = Math.hypot(follow.sx, follow.sz);
+  if (l < 0.05) return [0, 0, 0];
+  return [follow.sx / l, follow.sz / l, Math.min(1, l) * clamp((left - 0.3) / 2.2, 0, 1)];
+}
+function updateCat(dt) {
+  cat.boosting = false;
+  if (cat.stun > 0) {                                  // slipping: slide, spin, can't steer
+    cat.stun -= dt;
+    const f = Math.exp(-4.5 * dt); cat.vx *= f; cat.vz *= f;
+    cat.face += 14 * dt;
+    if (cat.stun <= 0) { cat.stun = 0; cat.immune = 0.7; }
+  } else {
+    const [dx, dz, strength] = catWantedDirection(dt);
+    const moving = strength > 0.03;
+    cat.boosting = sprinting() && moving;
+    const max = (cat.boosting ? CAT_BOOST : CAT_SPEED) * strength;
+    // zooming is faster but slides more, so it's harder to steer around broken bits
+    approachVelocity(cat, dx * max, dz * max, moving ? (cat.boosting ? 42 : 55) : 70, dt);
+    if (Math.hypot(cat.vx, cat.vz) > 0.5) cat.face = turnToward(cat.face, Math.atan2(cat.vx, cat.vz), 16, dt);
+    if (cat.immune > 0) cat.immune -= dt;
+  }
+  cat.x += cat.vx * dt; cat.z += cat.vz * dt;
+  collide(cat, CAT_BODY);
+}
+
+/* Items, debris, slipping */
+function updateItemsAndDebris(dt) {
+  for (let i = items.length - 1; i >= 0; i--) {
+    const it = items[i];
+    if (Math.hypot(cat.x - it.x, cat.z - it.z) < CAT_R + it.r) breakItem(i);
+  }
+  for (let i = respawns.length - 1; i >= 0; i--) {
+    respawns[i].t -= dt;
+    if (respawns[i].t <= 0) { const z = respawns[i].zone; respawns.splice(i, 1); if (z.count < world.def.itemsPerRoom) spawnItem(z); }
+  }
+  // broken bits are cleaned up 10 seconds after breaking (they shrink away over the last second)
+  let cleaned = false;
+  for (let i = debris.length - 1; i >= 0; i--) {
+    const d = debris[i]; d.age += dt;
+    if (d.age > DEBRIS_LIFE - 1) d.g.scale.setScalar(Math.max(0.001, DEBRIS_LIFE - d.age));
+    if (d.age >= DEBRIS_LIFE) { if (d.g.parent) d.g.parent.remove(d.g); d.dead = true; debris.splice(i, 1); cleaned = true; }
+  }
+  if (cleaned) { let j = 0; for (const s of shards) if (!s.d.dead) shards[j++] = s; shards.length = j; }
+  // fresh debris only becomes slippery once the cat has run clear of it (no slip at the moment of breaking)
+  for (const d of debris) if (!d.armed && Math.hypot(cat.x - d.x, cat.z - d.z) > ARM_DIST) d.armed = true;
+  if (cat.stun <= 0 && cat.immune <= 0) {
+    for (const d of debris) {
+      if (d.armed && Math.hypot(cat.x - d.x, cat.z - d.z) < SLIP_R) {
+        cat.stun = STUN_TIME; d.armed = false;
+        const sp = Math.hypot(cat.vx, cat.vz);
+        if (sp > 9) { cat.vx *= 9 / sp; cat.vz *= 9 / sp; }
+        break;
+      }
+    }
+  }
+}
+
+/* ---------------------------------------------------------------------
+   Owner: chases the cat, but aims for where the cat is HEADING so it
+   cuts the cat off (and walks round through another door to trap it).
+   He can trip on broken bits: a 1 in 5 chance each time he steps on some.
+   --------------------------------------------------------------------- */
+function planOwner() {
+  let gx = cat.x, gz = cat.z;
+  const dist = Math.hypot(cat.x - owner.x, cat.z - owner.z), sp = Math.hypot(cat.vx, cat.vz);
+  if (cat.stun <= 0 && dist > 4 && sp > 1) {
+    const ux = cat.vx / sp, uz = cat.vz / sp;
+    const ahead = Math.min(sp * Math.min(dist / OWNER_SPEED, 1.5), 12);   // where the cat will be by the time I get there
+    for (let s = 0.5; s <= ahead; s += 0.5) {                               // stop where the cat would hit a wall
+      const px = cat.x + ux * s, pz = cat.z + uz * s;
+      if (catNav.blockedAt(px, pz)) break;
+      gx = px; gz = pz;
+    }
+  }
+  ownerNav.setGoal(gx, gz);
+}
+function updateOwner(dt) {
+  if (owner.wake > 0) { owner.wake -= dt; return; }
+  if (owner.stun > 0) {                                // tripped: slide, spin, can't move or catch anyone
+    owner.stun -= dt;
+    const f = Math.exp(-5 * dt); owner.vx *= f; owner.vz *= f;
+    owner.face += 10 * dt;
+    owner.x += owner.vx * dt; owner.z += owner.vz * dt; collide(owner, OWNER_R);
+    if (owner.stun <= 0) { owner.stun = 0; owner.immune = 1.0; }
+    return;
+  }
+  if (owner.immune > 0) owner.immune -= dt;
+  for (const d of debris) {                            // stepping on broken bits (once per pile)
+    const on = Math.hypot(owner.x - d.x, owner.z - d.z) < OWNER_SLIP_R;
+    if (on && !d.ownerOn) { d.ownerOn = true; if (owner.immune <= 0 && Math.random() < OWNER_TRIP_CHANCE) { owner.stun = OWNER_STUN_TIME; return; } }
+    else if (!on) d.ownerOn = false;
+  }
+  owner.plan -= dt;
+  if (owner.plan <= 0) { owner.plan = 0.2; planOwner(); }
+  const dx = cat.x - owner.x, dz = cat.z - owner.z, dist = Math.hypot(dx, dz);
+  let tx, tz;
+  const lookX = owner.x + dx * (1 - 1 / Math.max(dist, 1.01)), lookZ = owner.z + dz * (1 - 1 / Math.max(dist, 1.01));
+  if (dist < 8 && ownerNav.los(owner.x, owner.z, lookX, lookZ)) { tx = cat.x; tz = cat.z; }   // can see the cat: go straight at it
+  else [tx, tz] = ownerNav.waypoint(owner.x, owner.z);
+  const ex = tx - owner.x, ez = tz - owner.z, m = Math.hypot(ex, ez);
+  const arrived = m < 0.25 && !(tx === cat.x && tz === cat.z);
+  approachVelocity(owner, arrived ? 0 : ex / m * OWNER_SPEED, arrived ? 0 : ez / m * OWNER_SPEED, 40, dt);
+  owner.x += owner.vx * dt; owner.z += owner.vz * dt;
+  collide(owner, OWNER_R);
+  if (Math.hypot(owner.vx, owner.vz) > 0.5) owner.face = turnToward(owner.face, Math.atan2(owner.vx, owner.vz), 10, dt);
+}
+
+/* ---------------------------------------------------------------------
+   Wind trail: white streaks are left behind the cat while it zooms
+   --------------------------------------------------------------------- */
+const TRAIL_N = 56, trail = [], trailGeo = new THREE.BoxGeometry(1, 0.05, 0.1);
+for (let i = 0; i < TRAIL_N; i++) {
+  const m = new THREE.Mesh(trailGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false }));
+  m.visible = false; scene.add(m); trail.push({ m, life: 0, max: 1, len: 1, dx: 0, dz: 0 });
+}
+let trailTimer = 0, trailIdx = 0;
+function updateTrail(dt) {
+  const sp = Math.hypot(cat.vx, cat.vz);
+  trailTimer -= dt;
+  if (cat.boosting && sp > 6 && trailTimer <= 0) {
+    trailTimer = 0.02;
+    const dx = cat.vx / sp, dz = cat.vz / sp;
+    for (let k = 0; k < 2; k++) {
+      const s = trail[trailIdx = (trailIdx + 1) % TRAIL_N], side = rand(-0.75, 0.75), back = rand(0.5, 1.1);
+      s.m.position.set(cat.x - dx * back - dz * side, rand(0.25, 1.2), cat.z - dz * back + dx * side);
+      s.m.rotation.y = Math.atan2(-dz, dx);
+      s.len = rand(1.2, 2.5); s.max = s.life = rand(0.3, 0.5); s.dx = dx; s.dz = dz; s.m.visible = true;
+    }
+  }
+  for (const s of trail) {
+    if (s.life <= 0) { s.m.visible = false; continue; }
+    s.life -= dt;
+    const u = Math.max(0, s.life / s.max);
+    s.m.material.opacity = 0.8 * u; s.m.scale.set(s.len * (0.35 + 0.65 * u), 1, 1);
+    s.m.position.x -= s.dx * 3 * dt; s.m.position.z -= s.dz * 3 * dt;
+  }
+}
+
+/* ---------------------------------------------------------------------
+   Main menu background: the cat runs laps round the living room with the
+   owner behind it, seen from the couch, with the ceiling and its fan
+   visible. A looping animation (it doesn't use the game rules).
+   --------------------------------------------------------------------- */
+const menuCam = new THREE.PerspectiveCamera(78, 1, 0.3, 200);
+const MENU_CEIL = 6.4;                 // a very high ceiling, so the room feels big
+const MENU_ARCH = 3.8;                 // where the doorway arches start curving; the owner is about 3.6 tall, so he passes straight through
+const MENU = { speed: 7.2, s: 0, t: 0, route: null };
+/* The chase is one closed loop, worked out with the game's own path finding so it goes round the furniture and through the real doorways:
+   a lap round the living room, a trip into the kitchen through the north door and back, then out of the east door into the hall and back. */
+const MENU_LAP = [[6.5, 22.6], [11, 23.9], [15.6, 22.0], [14.6, 19.0], [10, 18.8], [6.4, 20.4]];   // round the coffee table: along the couch side, up the east side, west along the north lane, down the west side
+const MENU_WAYPOINTS = [
+  ...MENU_LAP, ...MENU_LAP,                                   // two laps round the coffee table, in full view
+  [6.8, 23.0], [11, 24.0], [17.4, 24.2],                      // out along the couch side to the east door
+  [24.5, 24.8], [27.5, 22.4], [28.8, 26.0], [24.8, 26.4], [17.4, 24.2],   // a loop in the hall, and back
+  [15.6, 21.8], [14.2, 17.8],                                 // up the east side to the north door
+  [14, 10.6], [14.6, 4.6], [4.6, 3.4], [4.2, 10.2], [13.5, 10.8], [14.2, 17.8],   // into the kitchen, a lap round the island, and back out
+  [10, 18.8], [6.4, 20.4],                                    // west along the north lane, down the west side, and round again
+];
+function buildMenuRoute() {
+  const nav = worlds.house.ownerNav, wp = MENU_WAYPOINTS, pts = [];      // (the owner's grid is the stricter one, so the route is clear for both)
+  const first = nav.nearestFree(wp[0][0], wp[0][1]);
+  let x = nav.cellX(first), z = nav.cellZ(first);
+  pts.push([x, z]);
+  for (let i = 1; i <= wp.length; i++) {
+    const b = wp[i % wp.length]; nav.setGoal(b[0], b[1]);
+    for (let k = 0; k < 500 && Math.hypot(nav.gx - x, nav.gz - z) > 0.45; k++) {
+      const [tx, tz] = nav.waypoint(x, z), dx = tx - x, dz = tz - z, d = Math.hypot(dx, dz);
+      if (d < 1e-3) break;
+      const st = Math.min(0.4, d); x += dx / d * st; z += dz / d * st; pts.push([x, z]);
+    }
+  }
+  pts.pop();                                                             // the last point is the first point again
+  const obstacles = worlds.house.solids;
+  const smooth = half => {                                               // round off the corners (it is a closed loop)
+    const n = pts.length, sm = [];
+    for (let i = 0; i < n; i++) { let sx = 0, sz = 0; for (let k = -half; k <= half; k++) { const p = pts[(i + k + n) % n]; sx += p[0]; sz += p[1]; } sm.push([sx / (2 * half + 1), sz / (2 * half + 1)]); }
+    for (let i = 0; i < n; i++) pts[i] = sm[i];
+  };
+  const keepClear = d0 => {                                              // never closer than this to any wall or furniture
+    for (let it = 0; it < 4; it++) for (const p of pts) for (const s of obstacles) {
+      const cx = clamp(p[0], s.x0, s.x1), cz = clamp(p[1], s.z0, s.z1), dx = p[0] - cx, dz = p[1] - cz, d = Math.hypot(dx, dz);
+      if (d < d0 && d > 1e-6) { p[0] = cx + dx / d * d0; p[1] = cz + dz / d * d0; }
+    }
+  };
+  smooth(3); smooth(3); keepClear(1.05); smooth(2); keepClear(1.0);
+  const cum = [0];
+  for (let i = 1; i <= pts.length; i++) { const a = pts[i - 1], b = pts[i % pts.length]; cum.push(cum[i - 1] + Math.hypot(b[0] - a[0], b[1] - a[1])); }
+  MENU.route = { pts, cum, len: cum[pts.length] };
+}
+function routePos(R, s) {                // position at distance s along the loop
+  s = ((s % R.len) + R.len) % R.len;
+  let lo = 0, hi = R.pts.length;
+  while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (R.cum[mid] <= s) lo = mid; else hi = mid; }
+  const a = R.pts[lo], b = R.pts[(lo + 1) % R.pts.length], seg = R.cum[lo + 1] - R.cum[lo] || 1, u = (s - R.cum[lo]) / seg;
+  return [a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u];
+}
+function routeAt(R, s) {                 // position and running direction (measured over a short stretch, so tiny kinks don't make it jitter)
+  const p = routePos(R, s), a = routePos(R, s - 0.5), b = routePos(R, s + 0.5);
+  const dx = b[0] - a[0], dz = b[1] - a[1], d = Math.hypot(dx, dz) || 1;
+  return { x: p[0], z: p[1], dx: dx / d, dz: dz / d };
+}
+let menuSet = null;
+/* In the intro EVERY room has the same high ceiling as the living room: tall walls with high arched doorways, a ceiling with beams and a fan.
+   The corridors between the rooms get tall walls and a ceiling too, so nothing looks open to the sky. All of this is only drawn in the menu. */
+const menuCeilMat = new THREE.MeshLambertMaterial({ color: 0xf1e6d2, emissive: 0x3a3226 });
+function menuArchWall(len, notches) {    // a wall slab up to the ceiling with arched doorways cut into it (notches: [[centre, width], ...] along the wall)
+  const y = MENU_CEIL, sh = new THREE.Shape(); sh.moveTo(-len / 2, 0);
+  for (const [c, w] of notches.slice().sort((a, b) => a[0] - b[0])) {
+    const r = w / 2;
+    sh.lineTo(c - r, 0); sh.lineTo(c - r, MENU_ARCH); sh.absarc(c, MENU_ARCH, r, Math.PI, 0, true); sh.lineTo(c + r, 0);   // up the side, over the arch, down the other side
+  }
+  sh.lineTo(len / 2, 0); sh.lineTo(len / 2, y); sh.lineTo(-len / 2, y); sh.closePath();
+  const geo = new THREE.ExtrudeGeometry(sh, { depth: WALL_T + 0.04, bevelEnabled: false, curveSegments: 24 });
+  geo.translate(0, 0, -(WALL_T + 0.04) / 2);
+  const m = new THREE.Mesh(geo, mat(0xf3e7d3)); m.receiveShadow = true; return m;
+}
+function menuCeiling(g, x0, x1, z0, z1) {
+  const ceil = new THREE.Mesh(new THREE.PlaneGeometry(x1 - x0, z1 - z0), menuCeilMat);
+  ceil.rotation.x = Math.PI / 2; ceil.position.set((x0 + x1) / 2, MENU_CEIL, (z0 + z1) / 2); g.add(ceil);
+}
+function menuFan(g, fx, fz, fans) {
+  const y = MENU_CEIL, fan = new THREE.Group();
+  fan.position.set(fx, y - 2.6, fz); fan.scale.setScalar(1.1); g.add(fan);
+  cyl(0.04, 0.04, 2.6, 0x444444, fx, y - 1.3, fz, g, 6).castShadow = false;
+  cyl(0.28, 0.32, 0.2, 0x5a4636, 0, 0, 0, fan, 12);
+  for (let i = 0; i < 4; i++) { const arm = new THREE.Group(); arm.rotation.y = i * Math.PI / 2; fan.add(arm); box(1.5, 0.04, 0.34, 0xb58a5a, 1.05, -0.06, 0, arm); }
+  const lamp = ball(0.3, 0xfff1c9, 0, -0.28, 0, fan);
+  lamp.material = new THREE.MeshLambertMaterial({ color: 0xfff1c9, emissive: 0xffe9a8, emissiveIntensity: 0.9 });
+  fans.push(fan);
+}
+function buildMenuRoom(g, room, fans) {
+  const T = WALL_T, y = MENU_CEIL, w = room.x1 - room.x0, d = room.z1 - room.z0;
+  const x0 = room.x0 - T, x1 = room.x1 + T, z0 = room.z0 - T, z1 = room.z1 + T, cxm = (x0 + x1) / 2, czm = (z0 + z1) / 2;
+  menuCeiling(g, x0, x1, z0, z1);
+  for (const f of [0.26, 0.66]) box(x1 - x0, 0.3, 0.45, 0x7b5636, cxm, y - 0.15, room.z0 + d * f, g).castShadow = false;     // beams
+  for (const f of [0.325, 0.675]) box(0.45, 0.3, z1 - z0, 0x7b5636, room.x0 + w * f, y - 0.15, czm, g).castShadow = false;
+  const doorsOn = (axis, isA) => room.links.filter(l => l.axis === axis && (l.a === room) === isA);      // the room's real doorways become the arches
+  const north = menuArchWall(x1 - x0 + 0.04, doorsOn('z', false).map(l => [(l.x0 + l.x1) / 2 - cxm, DOOR_W])); north.position.set(cxm, 0, room.z0 - T / 2);
+  const south = menuArchWall(x1 - x0 + 0.04, doorsOn('z', true).map(l => [(l.x0 + l.x1) / 2 - cxm, DOOR_W])); south.position.set(cxm, 0, room.z1 + T / 2);
+  const west = menuArchWall(z1 - z0 + 0.04, doorsOn('x', false).map(l => [-((l.z0 + l.z1) / 2 - czm), DOOR_W])); west.rotation.y = Math.PI / 2; west.position.set(room.x0 - T / 2, 0, czm);
+  const east = menuArchWall(z1 - z0 + 0.04, doorsOn('x', true).map(l => [-((l.z0 + l.z1) / 2 - czm), DOOR_W])); east.rotation.y = Math.PI / 2; east.position.set(room.x1 + T / 2, 0, czm);
+  g.add(north, south, west, east);
+  menuFan(g, room.x0 + w * 0.5, room.z0 + d * 0.46, fans);
+}
+function buildMenuCorridor(g, l) {       // tall walls (above the low corridor walls) and a ceiling, with a beam across the middle
+  const T = WALL_T, y = MENU_CEIL, sy = 1.8, sh = y - sy, ex = l.axis === 'x';
+  const x0 = ex ? l.x0 : l.x0 - T, x1 = ex ? l.x1 : l.x1 + T, z0 = ex ? l.z0 - T : l.z0, z1 = ex ? l.z1 + T : l.z1;
+  menuCeiling(g, x0, x1, z0, z1);
+  if (ex) {
+    box(l.x1 - l.x0, sh, T + 0.04, 0xe9dcc4, (l.x0 + l.x1) / 2, sy + sh / 2, l.z0 - T / 2, g).castShadow = false;
+    box(l.x1 - l.x0, sh, T + 0.04, 0xe9dcc4, (l.x0 + l.x1) / 2, sy + sh / 2, l.z1 + T / 2, g).castShadow = false;
+    box(0.45, 0.3, z1 - z0, 0x7b5636, (l.x0 + l.x1) / 2, y - 0.15, (z0 + z1) / 2, g).castShadow = false;
+  } else {
+    box(T + 0.04, sh, l.z1 - l.z0, 0xe9dcc4, l.x0 - T / 2, sy + sh / 2, (l.z0 + l.z1) / 2, g).castShadow = false;
+    box(T + 0.04, sh, l.z1 - l.z0, 0xe9dcc4, l.x1 + T / 2, sy + sh / 2, (l.z0 + l.z1) / 2, g).castShadow = false;
+    box(x1 - x0, 0.3, 0.45, 0x7b5636, (x0 + x1) / 2, y - 0.15, (l.z0 + l.z1) / 2, g).castShadow = false;
+  }
+}
+function buildMenuSet() {
+  const w = worlds.house, g = new THREE.Group(), fans = [];
+  for (const room of w.rooms) buildMenuRoom(g, room, fans);
+  for (const l of w.links) buildMenuCorridor(g, l);
+  const room = w.rooms[3];                                       // the living room also gets tall windows high up on its north and west walls
+  for (const wx of [room.x0 + 3.2, room.x0 + 8.2]) {
+    box(3.0, 2.0, 0.12, 0x8b6b4a, wx, 4.9, room.z0 + 0.07, g).castShadow = false;
+    box(2.6, 1.6, 0.14, 0xa9dcff, wx, 4.9, room.z0 + 0.08, g).castShadow = false;
+    box(0.1, 1.6, 0.16, 0x8b6b4a, wx, 4.9, room.z0 + 0.09, g).castShadow = false;
+  }
+  for (const wz of [room.z0 + 4.5, room.z0 + 10]) {
+    box(0.12, 2.4, 3.0, 0x8b6b4a, room.x0 + 0.07, 4.4, wz, g).castShadow = false;
+    box(0.14, 2.0, 2.6, 0xa9dcff, room.x0 + 0.08, 4.4, wz, g).castShadow = false;
+  }
+  scene.add(g);
+  menuSet = { group: g, fans };
+}
+function enterMenuScene() {
+  if (!menuSet) buildMenuSet();
+  if (!MENU.route) buildMenuRoute();
+  menuSet.group.visible = true;
+  scene.background.setHex(0x6b5a82);     // a dusk-coloured sky, so the archways don't look like black holes
+  MENU.s = 0; MENU.t = 0;
+  for (const s of trail) s.life = 0;
+  for (const it of items) {              // clear the route of breakable things (the cat would run straight through them)
+    if (Math.hypot(it.x - 11, it.z - 26.7) < 7 || MENU.route.pts.some(p => Math.hypot(p[0] - it.x, p[1] - it.z) < 2)) it.mesh.visible = false;   // (also anything right in front of the couch)
+  }
+  menuCam.position.set(11, 1.4, 26.7);   // sitting on the couch. The camera never moves
+  menuCam.lookAt(10.6, 0.27, 17.5);      // looking a little down so the chase on the floor sits above the menu panel
+  updateMenuScene(0);
+}
+function updateMenuScene(dt) {
+  const R = MENU.route;
+  MENU.t += dt; MENU.s = (MENU.s + MENU.speed * dt) % R.len;
+  const gap = 4.4 + Math.sin(MENU.t * 0.9);                           // the owner runs a few steps behind, sometimes gaining a little
+  const c = routeAt(R, MENU.s), o = routeAt(R, MENU.s - gap);
+  cat.x = c.x; cat.z = c.z; cat.vx = c.dx * MENU.speed; cat.vz = c.dz * MENU.speed;
+  owner.x = o.x; owner.z = o.z; owner.vx = o.dx * MENU.speed * 0.97; owner.vz = o.dz * MENU.speed * 0.97;
+  cat.face = Math.atan2(cat.vx, cat.vz); owner.face = Math.atan2(owner.vx, owner.vz);
+  cat.boosting = true; cat.stun = 0; owner.stun = 0;
+  for (const f of menuSet.fans) f.rotation.y += dt * 4;
+}
+
+/* ---------------------------------------------------------------------
+   Animation (looks only)
+   --------------------------------------------------------------------- */
+function animateCat(dt, t) {
+  const sp = Math.hypot(cat.vx, cat.vz), k = Math.min(1, sp / 6);
+  cat.phase += sp * dt * 1.7;
+  const swing = k * 0.95, L = catParts.legs;
+  L[0].rotation.x = Math.sin(cat.phase) * swing;  L[3].rotation.x = Math.sin(cat.phase) * swing;
+  L[1].rotation.x = -Math.sin(cat.phase) * swing; L[2].rotation.x = -Math.sin(cat.phase) * swing;
+  const p = catParts.pivot;
+  p.position.y = Math.abs(Math.sin(cat.phase)) * 0.07 * k;
+  // fear: when the owner is close the fur bristles into spikes, and the tail puffs up and stands straight up
+  const scared = state === 'menu' || (state === 'playing' && owner.wake <= 0 && Math.hypot(cat.x - owner.x, cat.z - owner.z) < FEAR_DIST);
+  cat.fear += ((scared ? 1 : 0) - cat.fear) * Math.min(1, dt * 9);
+  const fr = cat.fear;
+  catParts.spikes.visible = catParts.tailSpikes.visible = fr > 0.03;
+  catParts.spikes.scale.setScalar(Math.max(0.001, fr)); catParts.tailSpikes.scale.setScalar(Math.max(0.001, fr));
+  catParts.tail.rotation.x = -0.9 * (1 - fr);                                        // -0.9 is the relaxed tail, 0 is straight up
+  catParts.tail.scale.set(1 + 0.9 * fr, 1 + 0.15 * fr, 1 + 0.9 * fr);                  // puffed out
+  catParts.tail.rotation.z = Math.sin(t * (6 + 30 * fr)) * (0.25 + 0.25 * (1 - k)) * (1 - 0.85 * fr);
+  p.position.x = Math.sin(t * 55) * 0.025 * fr;                                      // a little trembling
+  catParts.stars.visible = cat.stun > 0; catParts.stars.rotation.y = t * 8;
+  if (cat.stun > 0) { p.rotation.z = Math.sin(t * 20) * 0.35; p.rotation.x = 0; }
+  else { p.rotation.z *= 0.8; p.rotation.x = cat.boosting ? 0.12 : p.rotation.x * 0.8; }
+  if (state === 'won') p.position.y = Math.abs(Math.sin(t * 7)) * 0.5;
+  catMesh.position.set(cat.x, 0, cat.z); catMesh.rotation.y = cat.face;
+}
+function animateOwner(dt, t) {
+  const sp = Math.hypot(owner.vx, owner.vz), k = Math.min(1, sp / 6);
+  owner.phase += sp * dt * 1.3;
+  ownerParts.legs[0].rotation.x = Math.sin(owner.phase) * 0.7 * k;
+  ownerParts.legs[1].rotation.x = -Math.sin(owner.phase) * 0.7 * k;
+  const p = ownerParts.pivot;
+  p.position.y = Math.abs(Math.sin(owner.phase)) * 0.12 * k;
+  p.rotation.x = owner.stun > 0 ? 0 : 0.12 * k;
+  p.rotation.z = owner.stun > 0 ? Math.sin(t * 14) * 0.3 : 0;
+  ownerParts.stars.visible = owner.stun > 0; ownerParts.stars.rotation.y = t * 8;
+  const reach = state === 'lost' ? -2.6 : owner.stun > 0 ? -0.3 : -1.1 + Math.sin(owner.phase) * 0.15 * k;
+  for (const a of ownerParts.arms) a.rotation.x += (reach - a.rotation.x) * Math.min(1, dt * 10);
+  ownerMesh.position.set(owner.x, 0, owner.z); ownerMesh.rotation.y = owner.face;
+}
+
+/* ---------------------------------------------------------------------
+   Main loop
+   --------------------------------------------------------------------- */
+function update(dt) {
+  const t = performance.now() / 1000;
+  if (state === 'menu') updateMenuScene(dt, t);
+  else {
+    if (state === 'playing') {
+      updateCat(dt);
+      updateItemsAndDebris(dt);
+      updateOwner(dt);
+      if (!catCamOn) trackCameraRoom(dt);
+      elapsed += dt;
+      if (owner.stun <= 0 && owner.wake <= 0 && Math.hypot(cat.x - owner.x, cat.z - owner.z) < CATCH_DIST) endRound('lost');
+      else if (mode === 'classic') { timeLeft -= dt; if (timeLeft <= 0) { timeLeft = 0; endRound('won'); } }
+      else if (mode === 'break' && items.length === 0) endRound('won');     // everything is broken
+    }
+    updateCamera(dt);
+  }
+  updateFade();
+  for (const it of items) {
+    const far = catCamOn ? fadeAt(it.x, it.z) : 1;                                        // (the glow halo is a sprite, so it fades with this instead of the shader)
+    if (it.age < 0.35) { it.age += dt; const u = Math.min(1, it.age / 0.35); it.mesh.scale.setScalar(ITEM_SCALE * Math.max(0.01, 1 + 2.7 * Math.pow(u - 1, 3) + 1.7 * Math.pow(u - 1, 2))); }   // pop-in
+    const p = 0.5 + 0.5 * Math.sin(t * 3 + it.phase);                                     // the yellow glow pulses
+    it.glow.sprite.material.opacity = (0.36 + 0.34 * p) * far; it.glow.ring.material.opacity = 0.42 + 0.33 * p; it.glow.disc.material.opacity = 0.1 + 0.15 * p;
+  }
+  updateShards(dt);
+  updateTrail(dt);
+  animateCat(dt, t);
+  animateOwner(dt, t);
+  updateHud();
+}
+
+showMenu();
+resize();
+let lastFrame = performance.now();
+function frame(now) {
+  requestAnimationFrame(frame);
+  const dt = Math.min(0.05, Math.max(0, (now - lastFrame) / 1000)); lastFrame = now;
+  update(dt);
+  renderer.render(scene, state === 'menu' ? menuCam : camera);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
